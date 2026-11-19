@@ -77,7 +77,7 @@ class FakeMCP:
         return ListToolsResult(tools=[Tool(name='report_get',description='report',inputSchema={'type':'object','properties':{'advertiser_id':{'type':'string'},'start_date':{'type':'string'},'end_date':{'type':'string'}},'required':['advertiser_id']},annotations={'readOnlyHint':True}),Tool(name='campaign_update',inputSchema={'type':'object'},annotations={'readOnlyHint':False})])
     async def call_tool(self,name,args):
         self.calls.append((name,args))
-        return CallToolResult(content=[],structuredContent={'data':{'list':[{'metrics':{'spend':'12','clicks':'6','impressions':'100','conversion':'2'}}]}})
+        return CallToolResult(content=[],structuredContent={'code':0,'data':{'list':[{'metrics':{'spend':'12','clicks':'6','impressions':'100','conversion':'2'}}]}})
 
 
 def mock_session(monkeypatch,fake):

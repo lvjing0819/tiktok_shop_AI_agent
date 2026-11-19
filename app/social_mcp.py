@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 from app import store
 from app.ads_mcp import tools
 from app.mcp_connection import OAuthMCP, MCPError, TokenStorage
+from app.mcp_results import success
 
 SocialError = MCPError
 client = OAuthMCP(
@@ -165,20 +166,3 @@ async def call(mcp, available, name, arguments):
     if len(json.dumps(result).encode()) > 2_000_000:
         raise SocialError("Social 返回数据过大，请缩小查询范围")
     return result
-
-
-def success(result):
-    import json
-
-    if result.get("isError"):
-        return False
-    value = result.get("structuredContent")
-    if not isinstance(value, dict):
-        blocks = result.get("content") or []
-        if len(blocks) != 1 or blocks[0].get("type") != "text":
-            return False
-        try:
-            value = json.loads(blocks[0]["text"])
-        except (ValueError, KeyError):
-            return False
-    return isinstance(value, dict) and str(value.get("code")) == "0"

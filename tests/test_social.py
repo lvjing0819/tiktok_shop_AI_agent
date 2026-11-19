@@ -451,6 +451,11 @@ def test_sdk_social_dcr_pkce_and_client_id(client, monkeypatch):
             assert ads.public_status("default")["status"] == "disconnected"
             async with social.session("default") as mcp:
                 assert (await social.tools(mcp))[0]["name"] == "account_user_get"
+            # A model failure inside the yielded MCP session is not an OAuth
+            # failure, even when SDK task groups wrap it during cleanup.
+            with pytest.raises(model.ModelError, match="模拟模型失败"):
+                async with social.session("default"):
+                    raise model.ModelError("模拟模型失败")
         finally:
             if not task.done():
                 task.cancel()

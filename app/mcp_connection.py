@@ -16,6 +16,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import OAuthClientMetadata, OAuthToken, OAuthClientInformationFull
 from sqlalchemy import select, delete
 from app import store
+from app.model import ModelError
 
 
 class MCPError(Exception):
@@ -211,9 +212,10 @@ class OAuthMCP:
             callback_handler=callback_handler,
             timeout=self.authorization_timeout,
         )
+        body_error = None
         try:
             async with asyncio.timeout(
-                self.authorization_timeout + 60 if attempt_id else 120
+                self.authorization_timeout + 60 if attempt_id else 300
             ):
                 async with httpx.AsyncClient(
                     auth=auth, timeout=30, follow_redirects=False
@@ -223,14 +225,24 @@ class OAuthMCP:
                     ) as (read, write, _):
                         async with ClientSession(read, write) as mcp:
                             await mcp.initialize()
-                            yield mcp
+                            try:
+                                yield mcp
+                            except (MCPError, ModelError) as exc:
+                                # MCP task groups may wrap caller exceptions during
+                                # cleanup; retain safe domain errors for the API.
+                                body_error = exc
+                                raise
         except MCPError:
             raise
         except TimeoutError:
             raise MCPError(
                 "授权等待已超时，请从登录入口重新开始，并在同一浏览器完成"
+                if attempt_id
+                else "TikTok MCP 查询等待超时，请缩小范围后重试"
             ) from None
         except Exception:
+            if body_error is not None:
+                raise body_error from None
             # Do not reflect exception groups: HTTP errors may contain sensitive URLs.
             raise MCPError(
                 "TikTok MCP 连接或授权失败，请检查网络、授权状态及回调地址"
