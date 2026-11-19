@@ -309,6 +309,12 @@ def test_result_error_not_verified(client):
 def test_sdk_social_dcr_pkce_and_client_id(client, monkeypatch):
     base = social.server_url()
     issued = []
+    published_scopes = social.client.scope.split() + [
+        "video.publish",
+        "video.upload",
+        "comment.list.manage",
+        "biz.spark.auth",
+    ]
 
     def handler(request):
         path = request.url.path
@@ -318,7 +324,7 @@ def test_sdk_social_dcr_pkce_and_client_id(client, monkeypatch):
                 json={
                     "resource": base,
                     "authorization_servers": [base + "/oauth"],
-                    "scopes_supported": social.client.scope.split(),
+                    "scopes_supported": published_scopes,
                 },
             )
         if "oauth-authorization-server" in path or "openid-configuration" in path:
@@ -332,7 +338,7 @@ def test_sdk_social_dcr_pkce_and_client_id(client, monkeypatch):
                     "response_types_supported": ["code"],
                     "code_challenge_methods_supported": ["S256"],
                     "token_endpoint_auth_methods_supported": ["none"],
-                    "scopes_supported": social.client.scope.split(),
+                    "scopes_supported": published_scopes,
                 },
             )
         if path.endswith("/oauth/tiktok/register"):
@@ -340,7 +346,6 @@ def test_sdk_social_dcr_pkce_and_client_id(client, monkeypatch):
             assert body["redirect_uris"] == [
                 "http://127.0.0.1:8000/api/social/oauth/callback"
             ]
-            assert "video.publish" not in body.get("scope", "")
             return httpx.Response(201, json={**body, "client_id": "fake-social-client"})
         if path.endswith("/oauth/tiktok/token"):
             body = parse_qs(request.content.decode())
@@ -420,6 +425,8 @@ def test_sdk_social_dcr_pkce_and_client_id(client, monkeypatch):
             params = parse_qs(urlparse(url).query)
             assert params["code_challenge_method"] == ["S256"]
             assert params["resource"] == [base]
+            assert set(params["scope"][0].split()) == set(social.client.scope.split())
+            assert "video.publish" not in params["scope"][0]
             social.accept_callback(params["state"][0], "fake-social-code")
             await asyncio.wait_for(task, 5)
             assert social.public_status("default")["status"] == "connected"

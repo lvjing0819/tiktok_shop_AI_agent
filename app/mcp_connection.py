@@ -22,9 +22,35 @@ class MCPError(Exception):
     pass
 
 
+class RequestedScopeProvider(OAuthClientProvider):
+    """Pin consent scopes: MCP SDK 1.30 discovery otherwise selects every scope."""
+
+    def __init__(self, *args, requested_scope, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.requested_scope = requested_scope
+
+    async def _perform_authorization_code_grant(self):
+        # Registration metadata may advertise available scopes; only this subset
+        # is requested from the user. Keep this override covered on SDK upgrades.
+        self.context.client_metadata.scope = self.requested_scope
+        return await super()._perform_authorization_code_grant()
+
+
 class OAuthMCP:
-    def __init__(self, prefix, url, scope, client_name, key_env, redirect_env, label):
+    def __init__(
+        self,
+        prefix,
+        url,
+        scope,
+        client_name,
+        key_env,
+        redirect_env,
+        label,
+        *,
+        pin_scope=False
+    ):
         self.prefix, self.url, self.scope = prefix, url, scope
+        self.pin_scope = pin_scope
         self.client_name, self.key_env, self.redirect_env, self.label = (
             client_name,
             key_env,
@@ -124,6 +150,10 @@ class OAuthMCP:
             ):
                 raise MCPError("授权地址不是受支持的 TikTok 官方地址")
             state = parse_qs(parsed.query).get("state", [None])[0]
+            if self.pin_scope and set(
+                parse_qs(parsed.query).get("scope", [""])[0].split()
+            ) != set(self.scope.split()):
+                raise MCPError("授权请求权限与配置不一致，请检查 MCP SDK 版本")
             if not state:
                 raise MCPError("授权服务未提供 state 校验参数")
             with store.db(write=True) as conn:
@@ -161,7 +191,9 @@ class OAuthMCP:
                 await asyncio.sleep(1)
             raise MCPError("等待授权超时，请重新连接")
 
-        auth = OAuthClientProvider(
+        provider = RequestedScopeProvider if self.pin_scope else OAuthClientProvider
+        auth = provider(
+            **({"requested_scope": self.scope} if self.pin_scope else {}),
             server_url=self.server_url(),
             client_metadata=OAuthClientMetadata(
                 redirect_uris=[self.redirect_uri()],
