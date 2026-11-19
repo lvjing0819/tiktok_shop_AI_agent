@@ -17,5 +17,5 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/python -m pip install -r requirements.lock
 if [ ! -f .env ]; then cp .env.example .env; fi
-(cd frontend && npm ci && npm run build)
+(cd frontend && npm ci --cache ../.cache/npm && npm run build)
 exec .venv/bin/python -m scripts.run
