@@ -1,9 +1,10 @@
-"""Explicit product flow. Database stores stage outputs for restart/retry."""
+"""Persisted graph, approval interrupt, resumable nodes and mock publication."""
+import json
 from decimal import Decimal, ROUND_UP
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-from app.model import complete
-from app.store import save
+from langgraph.types import interrupt
+from app import model
 
 
 class State(TypedDict):
@@ -11,46 +12,53 @@ class State(TypedDict):
 
 
 def validate(state):
-    t = state['task']
-    p = t['product']
-    if p['stock'] <= 0:
+    t = dict(state['task'])
+    if t['product']['stock'] <= 0:
         raise ValueError('库存不足，无法准备上架')
-    price = (Decimal(str(p['cost'])) / (1 - Decimal(str(t['target_margin'])))).quantize(Decimal('.01'), rounding=ROUND_UP)
-    t['price'] = str(price)
-    t['events'].append('商品校验完成；价格为仅考虑输入成本的示例报价，不含平台费、税费及退款')
-    save(t)
+    t['price'] = str((Decimal(str(t['product']['cost']))/(1-Decimal(str(t['target_margin'])))).quantize(Decimal('.01'), rounding=ROUND_UP))
+    t['events'] = t['events'] + ['商品校验完成；报价仅含商品成本，未含费用税费']
     return {'task': t}
 
 
 def prepare(state):
-    t = state['task']
-    if 'copy' not in t:
-        t['copy'] = complete('你是商品运营专员。仅依据输入事实，用中文输出卖点、英文商品标题和素材需求，不添加认证或功效。', str(t['product']))
-        save(t)
-    # Explicitly mock media: no images/videos are fabricated as real assets.
+    t = dict(state['task'])
+    t['copy'] = model.complete('你是商品运营专员。依据商品事实和已确认店铺偏好生成卖点、英文标题及素材需求，不添加认证功效。', json.dumps({'product': t['product'], 'preferences': t.get('preferences', {})}, ensure_ascii=False))
     t['materials'] = {'mode': 'mock', 'image': '待接入图片生成服务', 'video': '待接入视频生成服务'}
     t['status'] = 'awaiting_review'
-    t['events'].append('商品方案已准备；图片和视频接口仍为模拟占位，等待审核')
-    save(t)
+    t['events'] = t['events'] + ['方案已准备，等待审核；媒体尚未生成']
     return {'task': t}
 
 
-builder = StateGraph(State)
-builder.add_node('validate', validate)
-builder.add_node('prepare', prepare)
-builder.add_edge(START, 'validate')
-builder.add_edge('validate', 'prepare')
-builder.add_edge('prepare', END)
-graph = builder.compile()
+def review(state):
+    t = dict(state['task'])
+    decision = interrupt({'task_id': t['id'], 'version': t['version'], 'price': t['price'], 'copy': t['copy']})
+    if decision['version'] != t['version']:
+        raise ValueError('审核版本不匹配')
+    t['decision'] = decision
+    t['approved_version'] = t['version'] if decision['approved'] else None
+    t['status'] = 'approved' if decision['approved'] else 'rejected'
+    t['events'] = t['events'] + ['已批准' if decision['approved'] else '已驳回']
+    return {'task': t}
 
 
-def run(task):
-    task['status'] = 'running'
-    save(task)
-    try:
-        return graph.invoke({'task': task})['task']
-    except Exception:
-        # Do not persist provider exception text: may include request metadata.
-        task['status'] = 'failed'
-        task['events'].append('执行失败：请检查库存、模型配置及服务状态后重试')
-        return save(task)
+def publish(state):
+    t = dict(state['task'])
+    if t['status'] != 'approved' or t['approved_version'] != t['version']:
+        raise ValueError('当前版本未经审批')
+    # Stable id is an idempotency key for MOCK publication only.
+    t['listing_id'] = 'mock-'+t['id']
+    t['status'] = 'published'
+    t['events'] = t['events'] + ['已模拟上架，未访问 TikTok Shop']
+    return {'task': t}
+
+
+def build(checkpointer):
+    g = StateGraph(State)
+    for name, fn in [('validate', validate), ('prepare', prepare), ('review', review), ('publish', publish)]:
+        g.add_node(name, fn)
+    g.add_edge(START, 'validate')
+    g.add_edge('validate', 'prepare')
+    g.add_edge('prepare', 'review')
+    g.add_conditional_edges('review', lambda s: 'publish' if s['task']['status'] == 'approved' else END)
+    g.add_edge('publish', END)
+    return g.compile(checkpointer=checkpointer)
