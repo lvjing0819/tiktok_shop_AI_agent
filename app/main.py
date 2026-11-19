@@ -9,7 +9,7 @@ from app import store, model, memory, conversation
 from app.mcp_connection import MCPError
 
 load_dotenv()
-app = FastAPI(title="TikTok Shop Agent Workbench", version="0.5.0")
+app = FastAPI(title="TikTok Shop Agent Workbench", version="0.6.0")
 
 
 def scope(
@@ -77,7 +77,8 @@ def health(shop=Depends(scope)):
         "database": (
             "postgresql" if store.database_url().startswith("postgresql") else "sqlite"
         ),
-        "version": "0.5.0",
+        "version": "0.6.0",
+        "shop_connection": "seller_oauth_read_only",
         "conversation_routing": model.mode() == "bailian",
     }
 
@@ -339,6 +340,9 @@ app.include_router(ads_router(scope))
 from app.social_routes import router as social_router
 
 app.include_router(social_router(scope))
+from app.shop_routes import router as shop_router
+
+app.include_router(shop_router(scope))
 
 # A production build can be served by the same local API process.
 from pathlib import Path

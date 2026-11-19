@@ -1,6 +1,6 @@
 # TikTok Shop AI Agent 工作台
 
-基于 **LangGraph + FastAPI + React + 阿里云百炼** 的本地运营应用。v0.5 提供会话与店铺记忆、持久化任务、Ads/Social 只读 MCP 接入，以及统一会话分派。
+基于 **LangGraph + FastAPI + React + 阿里云百炼** 的本地运营应用。v0.6 提供会话与店铺记忆、持久化任务、Ads/Social 只读 MCP、统一会话分派，以及 TikTok Shop 卖家授权和只读店铺验证。
 
 ## 已完成
 
@@ -116,7 +116,7 @@ python -m scripts.migrate_legacy /absolute/path/to/old-shop.sqlite
 
 ## 当前边界
 
-- TikTok Shop 上架仍是 **mock**，仅生成稳定 `mock-` 编号。没有访问真实店铺。
+- TikTok Shop 上架仍是 **mock**，仅生成稳定 `mock-` 编号。Shop 授权与只读店铺列表接口已提供；实际连接状态以本机授权及业务请求结果为准。
 - 图片、视频仍为明确占位，未接入生成模型；定价仅考虑输入成本，不含平台费、税费、运费和退款。
 - 百炼模式下，运营对话可分派到 Ads/Social 只读查询；尚未自动创建商品任务，任务仍从商品页创建。
 - 订单、财务尚未接入真实数据。Ads 与 Social 的连接及部分只读业务已完成真实联调；百炼路由与真实数据的联合测试仍需本机有效模型密钥。
@@ -191,3 +191,12 @@ TikTok 官方接入入口：https://partner.tiktokshop.com/docv2/page/hhw7w40d �
 配置、查询示例和执行记录接口见 [统一会话说明](docs/conversation.md)。本轮没有改动前端；现有消息接口仍返回原会话结构，并增加执行记录元数据。
 
 新增端到端自动化测试验证路由、账户名称与时区、追问续接、业务错误、证据隔离和会话删除事务。真实账户解析、百炼连接、统一会话广告账户发现、Social 账号查询、GMV Max 报告与连续日期追问已在本机验证。新环境需配置自己的百炼密钥并独立授权；模拟模型测试不能代替真实联调。
+
+
+## v0.6 TikTok Shop 卖家授权
+
+独立 Shop HTTP 适配器实现新授权回调、已有令牌导入、HMAC-SHA256 请求签名、加密存储、刷新及真实授权店铺查询。只读查询不代表已经实现上架或库存修改，Shop 也尚未加入普通会话的路由工具。
+
+已有有效 Shop token 时，可直接在本机配置后调用 `POST /api/shop/import-token`，不要求 service_id 或回调地址。遗失旧 token 时，从 `GET /api/shop/login` 开始新授权；公网回调没有处理程序时，可通过本机 `/api/shop/finish` 接收完整回调 URL，验证一次性 state 后换取 token，不要求现在部署 SiteGround。正式常态化使用仍应接入正式回调。
+
+具体配置、步骤、接口与安全边界见 [TikTok Shop 接入说明](docs/tiktok-shop.md)。真实 secret 和 token 均只在本机配置，空模板不代表已有授权。67项自动化测试通过；模拟 HTTP 验证不代替真实卖家授权及店铺数据联调。
