@@ -15,7 +15,8 @@ if [ ! -x .venv/bin/python ]; then
   fi
   "$selected_python" -m venv .venv
 fi
-.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m pip install --cache-dir .cache/pip -r requirements.lock
 if [ ! -f .env ]; then cp .env.example .env; fi
+.venv/bin/python -m scripts.setup_ads
 (cd frontend && npm ci --cache ../.cache/npm && npm run build)
 exec .venv/bin/python -m scripts.run

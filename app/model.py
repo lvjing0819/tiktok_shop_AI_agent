@@ -11,9 +11,9 @@ def mode():
     return os.getenv('MODEL_MODE', 'demo')
 
 
-def chat(messages):
+def message(messages, tools=None):
     if mode() == 'demo':
-        return '[演示模式，未调用模型] 已读取当前会话和店铺记忆。配置百炼后可进行真实对话与分析。'
+        return {'role': 'assistant', 'content': '[演示模式，未调用模型] 已读取当前会话和店铺记忆。配置百炼后可进行真实对话与分析。'}
     if mode() != 'bailian':
         raise ModelError('MODEL_MODE 仅支持 demo 或 bailian')
     key = os.getenv('DASHSCOPE_API_KEY', '').strip()
@@ -26,16 +26,23 @@ def chat(messages):
         with httpx.Client(timeout=httpx.Timeout(90, connect=10)) as client:
             response = client.post(base.rstrip('/')+'/chat/completions',
                 headers={'Authorization': 'Bearer '+key},
-                json={'model': os.getenv('BAILIAN_MODEL', 'qwen-plus'), 'messages': messages, 'max_tokens': 2000})
+                json={'model': os.getenv('BAILIAN_MODEL', 'qwen-plus'), 'messages': messages, 'max_tokens': 2000, **({'tools': tools, 'tool_choice': 'auto'} if tools else {})})
             if response.status_code >= 400:
                 errors = {401: '百炼密钥无效或地域不匹配', 403: '百炼模型访问被拒绝', 429: '百炼限流或配额不足'}
                 raise ModelError(errors.get(response.status_code, f'百炼服务返回 HTTP {response.status_code}'))
-            value = response.json()['choices'][0]['message']['content']
-            if not isinstance(value, str) or not value.strip():
-                raise ModelError('百炼未返回有效文本')
-            return value
+            value = response.json()['choices'][0]['message']
+            if not value.get('tool_calls') and not (isinstance(value.get('content'), str) and value['content'].strip()):
+                raise ModelError('百炼未返回有效文本或工具调用')
+            return {k: value[k] for k in ('role', 'content', 'tool_calls') if k in value}
     except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
         raise ModelError('百炼连接超时、网络异常或返回格式无效') from exc
+
+
+def chat(messages):
+    value = message(messages)
+    if not isinstance(value.get('content'), str):
+        raise ModelError('百炼未返回文本')
+    return value['content']
 
 
 def complete(role, prompt):

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import AdsPanel from "./AdsPanel";
 type Task = {
   id: string;
   status: string;
@@ -43,25 +44,28 @@ function App() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [question, setQuestion] = useState("");
-  async function api(path: string, body?: unknown, method?: string) {
-    const r = await fetch("/api" + path, {
-      method: method || (body === undefined ? "GET" : "POST"),
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shop-ID": shop,
-        ...(token ? { Authorization: "Bearer " + token } : {}),
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
-    const data = await r.json();
-    if (!r.ok)
-      throw Error(
-        typeof data.detail === "string"
-          ? data.detail
-          : JSON.stringify(data.detail),
-      );
-    return data;
-  }
+  const api = useCallback(
+    async (path: string, body?: unknown, method?: string) => {
+      const r = await fetch("/api" + path, {
+        method: method || (body === undefined ? "GET" : "POST"),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shop-ID": shop,
+          ...(token ? { Authorization: "Bearer " + token } : {}),
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+      const data = await r.json();
+      if (!r.ok)
+        throw Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : JSON.stringify(data.detail),
+        );
+      return data;
+    },
+    [shop, token],
+  );
   async function refresh() {
     const [t, s, h] = await Promise.all([
       api("/tasks"),
@@ -161,6 +165,7 @@ function App() {
           ["chat", "运营对话"],
           ["tasks", "商品任务"],
           ["memory", "店铺记忆"],
+          ["ads", "广告分析"],
         ].map(([id, title]) => (
           <button
             className={tab === id ? "selected" : "secondary"}
@@ -171,6 +176,14 @@ function App() {
           </button>
         ))}
       </nav>
+      {tab === "ads" && (
+        <AdsPanel
+          key={shop}
+          api={api}
+          shop={shop}
+          modelMode={health.model_mode}
+        />
+      )}
       {tab === "chat" && (
         <section className="chat-grid">
           <article>

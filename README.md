@@ -1,6 +1,6 @@
 # TikTok Shop AI Agent 工作台
 
-基于 **LangGraph + FastAPI + React + 阿里云百炼** 的本地运营应用。v0.2 加入可管理的记忆、数据库任务队列和持久化图执行。
+基于 **LangGraph + FastAPI + React + 阿里云百炼** 的本地运营应用。v0.3 提供会话与店铺记忆、持久化任务，以及 TikTok Ads 只读 MCP 接入。
 
 ## 已完成
 
@@ -119,8 +119,8 @@ python -m scripts.migrate_legacy /absolute/path/to/old-shop.sqlite
 - TikTok Shop 上架仍是 **mock**，仅生成稳定 `mock-` 编号。没有访问真实店铺。
 - 图片、视频仍为明确占位，未接入生成模型；定价仅考虑输入成本，不含平台费、税费、运费和退款。
 - 对话只能给建议，尚未自动创建任务；任务从商品页创建。
-- 订单、财务、广告没有真实数据；分析不得编造经营指标。
-- 暂无完整主管多 agent、ReAct 工具循环、候选记忆自动提取、向量检索和效果评估。
+- 订单、财务尚未接入真实数据；广告可通过新 MCP 模块查询，尚未完成真实账户联调；分析不得编造经营指标。
+- 广告模块已有受限的只读工具循环；完整主管多 agent、候选记忆自动提取、向量检索和效果评估尚未实现。
 - 任务是至少一次执行；崩溃在模型响应与检查点落盘之间可能重复调用并产生费用。当前模拟上架稳定编号，不代表真实外部 API 已实现幂等。建议先使用一个 worker；运行中的任务不支持取消。
 - 图状态是执行记忆；店铺长期偏好是业务数据库中的结构化记录，未使用 LangGraph Store 或向量数据库。
 
@@ -129,3 +129,50 @@ TikTok 官方接入入口：https://partner.tiktokshop.com/docv2/page/hhw7w40d �
 ## 本次验证记录
 
 已验证干净 Python 环境的 SQLite 测试、跨进程恢复、HTTP 对话入口和前端生产构建。当前环境没有 PostgreSQL 服务及百炼真实密钥，PostgreSQL 部署与真实模型调用尚未实测。浏览器内置预览超时，未完成视觉验收。
+
+## v0.3 TikTok Ads 官方 MCP（只读）
+
+「广告分析」页现在包含授权连接、工具检查、真实数据分析、证据和历史报告。广告接口与 TikTok Shop 上架接口独立。
+
+### 配置与连接
+
+1. 安装更新后的依赖：`pip install -r requirements.lock`。
+2. `python -m scripts.setup_ads` 在本机 `.env` 生成令牌加密密钥，不会输出密钥；一键启动脚本会自动执行。请备份 `.env`，丢失密钥将无法解密已保存授权。不要将 `.env` 提交 Git。
+3. 配置百炼为 `MODEL_MODE=bailian`，填入本机密钥；重启 API 与 worker。
+4. 打开「广告分析」，点击连接，等待出现「打开 TikTok 授权页面」，在 TikTok 登录并授权。返回工作台等待显示已连接。
+5. 输入 Ads Manager 中的广告账户 ID、日期范围和问题，开始查询。没有真实连接或仍处于离线演示模式时，不会伪造广告数据。
+
+`ADS_OAUTH_REDIRECT_URI` 默认 `http://127.0.0.1:8000/api/ads/oauth/callback`，必须与浏览器能够访问的后端地址一致。如果 TikTok 实际注册规则不接受回环地址，请配置可访问的 HTTPS 回调，不能随意替换已注册地址。当前尚未实测 TikTok 账号授权，对特定回调地址是否被 TikTok 接受不作保证。开启 APP_TOKEN 时回调仍通过一次性 state 验证，不依赖浏览器携带工作台令牌。
+
+### 连接实现
+
+使用 MCP Python SDK v1 的 Streamable HTTP 和 OAuthClientProvider，通过官方服务的标准元数据发现完成动态客户端注册、PKCE、令牌交换和刷新。客户端信息与访问/刷新令牌均加密入库；原始授权码也加密暂存，完成后移除。回调访问日志被过滤，避免记录 URL 中的授权码。
+
+固定连接 `https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat`。本版选择 flat 是为了直接取得完整工具定义，再在本机过滤；不会把全部工具塞给模型。尚未接入 layer 服务的渐进工具发现流程。
+
+授权过程最多等待6分钟，当前运行在 API 进程内；服务重启时需断开并重新开始授权。已有授权令牌与客户端信息可跨重启保存。连接状态表示曾成功建立连接；是否仍有效以工具请求和刷新结果为准。
+
+「断开并删除本地授权」只删除本机凭据并使旧授权流程失效，不会自动撤销 TikTok 侧授权。远程撤销请在 TikTok for Business 授权设置完成。删除本地授权不会删除历史分析报告；报告可单独删除。
+
+### 只读策略和分析
+
+- 默认只允许名称属于查询类、明确声明 `readOnlyHint=true` 的工具。写操作和通用执行器始终拦截。
+- 若官方工具未给只读注解，可先查看工具列表及官方定义，将审核过的**精确只读工具名**填入 `ADS_READ_TOOL_ALLOWLIST`（逗号分隔），重启后生效。这个配置不能解除写操作名称拦截，不可填入未经检查的工具。
+- 每次从可用工具中选择最多24个，LangGraph 管理「模型判断 → 参数校验 → 调用 → 观察」循环，最多6次调用；没有成功工具证据时不生成经营结论。
+- 根级 advertiser_id/advertiser_ids 固定到所选账户；嵌套的其他 advertiser_id 被拒绝。根级 start_date/end_date 若在 schema 中则固定为输入日期。其他时间过滤形式需结合工具定义及原始参数核对，不保证工具已覆盖所选日期。
+- 报告记录工具名、参数、原始结果、查询时间与证据编号。模型读取有限预览；完整原始结果可展开查看。
+- 仅当 structuredContent 中有明确报表行和相应指标时，程序按行计算 CTR、CPC、CPA；不会跨分页或跨维度擅自合并。币种、时区和归因口径以官方结果为准。
+- 报表接口尚未加入统一分页拉取或完整性校验；模型最多6次调用不代表已读取全部数据。超大结果会要求缩小范围。
+
+### 验证范围
+
+新增测试通过模拟 HTTP 完整运行真实 MCP SDK 的 OAuth 注册、PKCE、回调和后续工具请求；也验证令牌不以明文保存、断开后旧流程不能重写令牌、跨店铺隔离、只读拦截、参数校验、证据与调用上限。
+
+这不是 TikTok 真实账号联调：当前执行环境无法连接该 MCP 域名，尚未核验实际工具名称、注解覆盖情况、账户权限、回调接受规则和真实报表格式。工具列表和原始结果始终以运行时官方返回为准。也尚未实测真实百炼模型的工具选择。
+
+官方接入依据：
+- https://business-api.tiktok.com/portal/docs/how-to-connect-a-custom-agent-to-tiktok-for-business-mcp-server/v1.3
+- https://business-api.tiktok.com/portal/docs/mcp-authorization/v1.3
+- https://business-api.tiktok.com/portal/docs/exchange-an-mcp-authorization-code-for-tokens/v1.3
+
+广告分析当前是单次 API 请求中的有界流程，成功后保存报告。请求期间服务重启需要重新查询；它尚未接入商品任务使用的持久化队列和检查点。
