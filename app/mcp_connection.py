@@ -47,10 +47,12 @@ class OAuthMCP:
         redirect_env,
         label,
         *,
-        pin_scope=False
+        pin_scope=False,
+        authorization_timeout=360,
     ):
         self.prefix, self.url, self.scope = prefix, url, scope
         self.pin_scope = pin_scope
+        self.authorization_timeout = authorization_timeout
         self.client_name, self.key_env, self.redirect_env, self.label = (
             client_name,
             key_env,
@@ -178,7 +180,8 @@ class OAuthMCP:
                 )
 
         async def callback_handler():
-            for _ in range(300):
+            deadline = time.monotonic() + self.authorization_timeout
+            while time.monotonic() < deadline:
                 current = self.connection(shop)
                 if not current or current["generation"] != generation:
                     raise MCPError("授权已取消")
@@ -206,9 +209,12 @@ class OAuthMCP:
             storage=TokenStorage(self, shop, generation),
             redirect_handler=redirect_handler,
             callback_handler=callback_handler,
+            timeout=self.authorization_timeout,
         )
         try:
-            async with asyncio.timeout(360 if attempt_id else 120):
+            async with asyncio.timeout(
+                self.authorization_timeout + 60 if attempt_id else 120
+            ):
                 async with httpx.AsyncClient(
                     auth=auth, timeout=30, follow_redirects=False
                 ) as client:
@@ -220,6 +226,10 @@ class OAuthMCP:
                             yield mcp
         except MCPError:
             raise
+        except TimeoutError:
+            raise MCPError(
+                "授权等待已超时，请从登录入口重新开始，并在同一浏览器完成"
+            ) from None
         except Exception:
             # Do not reflect exception groups: HTTP errors may contain sensitive URLs.
             raise MCPError(
@@ -262,7 +272,7 @@ class OAuthMCP:
             attempt = {
                 "id": attempt_id,
                 "generation": generation,
-                "expires_at": time.time() + 360,
+                "expires_at": time.time() + self.authorization_timeout,
                 "authorization_url": None,
                 "callback": None,
             }
@@ -277,7 +287,7 @@ class OAuthMCP:
                 item = self.locked_connection(conn, shop, generation)
                 item.update(status="connected", connected_at=time.time(), error=None)
                 store.put(conn, self.kind("connection"), item, shop)
-        except Exception:
+        except Exception as exc:
             with store.db(write=True) as conn:
                 item = store.get(
                     self.prefix + ":" + shop, self.kind("connection"), shop, conn
@@ -285,7 +295,11 @@ class OAuthMCP:
                 if item and item["generation"] == generation:
                     item.update(
                         status="error",
-                        error="连接未完成；请检查网络与回调地址后重新授权",
+                        error=(
+                            str(exc)
+                            if isinstance(exc, MCPError)
+                            else "连接未完成；请检查网络与回调地址后重新授权"
+                        ),
                     )
                     store.put(conn, self.kind("connection"), item, shop)
         finally:

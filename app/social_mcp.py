@@ -23,6 +23,7 @@ client = OAuthMCP(
     "SOCIAL_OAUTH_REDIRECT_URI",
     "TikTok Social",
     pin_scope=True,
+    authorization_timeout=900,
 )
 server_url = client.server_url
 connection = client.connection

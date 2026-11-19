@@ -46,6 +46,24 @@ def test_credentials_service_isolation(client):
         asyncio.run(sst.get_tokens())
 
 
+def test_social_login_window_and_timeout_reason(client):
+    a, _ = social.begin_connection("default")
+    assert 899 < a["expires_at"] - time.time() <= 900
+    ads_attempt, _ = ads.begin_connection("default")
+    assert 359 < ads_attempt["expires_at"] - time.time() <= 360
+
+    @asynccontextmanager
+    async def timed_out(*args, **kwargs):
+        raise social.SocialError("等待授权超时，请重新连接")
+        yield
+
+    from unittest.mock import patch
+
+    with patch.object(social.client, "session", timed_out):
+        asyncio.run(social.authorize("default", a["id"], a["generation"]))
+    assert social.public_status("default")["error"] == "等待授权超时，请重新连接"
+
+
 def test_ads_ciphertext_cannot_be_reused_by_social(client):
     a, _ = ads.begin_connection("default")
     b, _ = social.begin_connection("default")

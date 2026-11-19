@@ -53,6 +53,8 @@ HTTPS_PROXY=http://127.0.0.1:9674
 
 OAuth 授权需在 TikTok 页面由用户完成。`connect` 返回202仅表示开始，`tools/list` 成功也只验证工具连接；要证明实际账号访问，还需成功调用只读工具并核对返回的业务 code/request_id。授权流程在 API 进程内等待，重启期间未完成的授权需重新发起。
 
+本地 Social 授权等待窗口为15分钟，TikTok 侧的有效期和浏览器 Cookie 校验独立生效。若 TikTok 页面显示 `Invalid OAuth state or browser binding`，说明尚未跳回本地后端；请从 `/api/social/login` 重新开始，全程使用同一个普通浏览器窗口并允许 Cookie。不要刷新或复用带 `code` 的旧回调页面，也不要在中途切换内置浏览器和 Chrome。延长本地等待窗口不能绕过 TikTok 的浏览器绑定检查。
+
 ## 无需模型的只读调用示例
 
 在完成授权后，先 `GET /api/social/tools` 查看当前 schema。官方文档提供以下标签建议示例；以实际工具参数为准：
