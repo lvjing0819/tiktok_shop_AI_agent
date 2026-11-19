@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app import store, model, memory
 
 load_dotenv()
-app = FastAPI(title='TikTok Shop Agent Workbench', version='0.3.0')
+app = FastAPI(title='TikTok Shop Agent Workbench', version='0.4.0')
 
 
 def scope(x_shop_id: str = Header(default='default', pattern=r'^[a-zA-Z0-9_-]{1,64}$'), authorization: str = Header(default='')):
@@ -65,7 +65,7 @@ def require(task_id, shop, conn=None):
 
 @app.get('/api/health')
 def health(shop=Depends(scope)):
-    return {'model_mode': model.mode(), 'key_configured': bool(os.getenv('DASHSCOPE_API_KEY')), 'shop_mode': 'mock', 'media_mode': 'mock', 'database': 'postgresql' if store.database_url().startswith('postgresql') else 'sqlite', 'version': '0.3.0'}
+    return {'model_mode': model.mode(), 'key_configured': bool(os.getenv('DASHSCOPE_API_KEY')), 'shop_mode': 'mock', 'media_mode': 'mock', 'database': 'postgresql' if store.database_url().startswith('postgresql') else 'sqlite', 'version': '0.4.0'}
 
 
 @app.post('/api/model/check')
@@ -210,6 +210,8 @@ def analyze(body: Analysis, shop=Depends(scope)):
 
 from app.ads_routes import router as ads_router
 app.include_router(ads_router(scope))
+from app.social_routes import router as social_router
+app.include_router(social_router(scope))
 
 # A production build can be served by the same local API process.
 from pathlib import Path

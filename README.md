@@ -176,3 +176,9 @@ TikTok 官方接入入口：https://partner.tiktokshop.com/docv2/page/hhw7w40d �
 - https://business-api.tiktok.com/portal/docs/exchange-an-mcp-authorization-code-for-tokens/v1.3
 
 广告分析当前是单次 API 请求中的有界流程，成功后保存报告。请求期间服务重启需要重新查询；它尚未接入商品任务使用的持久化队列和检查点。
+
+## v0.4 TikTok Social MCP
+
+增加独立 Social 后端连接、OAuth/可选 Organic 用户 token 认证、只读工具调用与自然语言查询。复用传输实现，保留现有 Ads 授权记录及接口。Social 和 Ads 的凭据、回调、状态、报告分别保存；发布和评论修改被拦截。该阶段未修改前端。
+
+配置、API 与完整文档依据见 [TikTok Social 后端说明](docs/tiktok-social.md)。Social 标准 OAuth 的用户授权窗口是一年，与 Ads 的30天不同。当前阶段需要单独完成 TikTok 账号授权后才能验证业务数据访问。

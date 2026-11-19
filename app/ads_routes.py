@@ -12,7 +12,7 @@ from app import ads_mcp, ads_analysis, store, model
 # OAuth callback URLs carry an authorization code; never log their query strings.
 class NoOAuthAccessLog(logging.Filter):
     def filter(self, record):
-        return '/api/ads/oauth/callback' not in record.getMessage()
+        return not any(path in record.getMessage() for path in ('/api/ads/oauth/callback', '/api/social/oauth/callback'))
 
 
 logging.getLogger('uvicorn.access').addFilter(NoOAuthAccessLog())
