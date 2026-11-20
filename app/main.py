@@ -9,7 +9,7 @@ from app import store, model, memory, conversation
 from app.mcp_connection import MCPError
 
 load_dotenv()
-app = FastAPI(title="TikTok Shop Agent Workbench", version="0.6.0")
+app = FastAPI(title="TikTok Shop Agent Workbench", version="0.7.0")
 
 
 def scope(
@@ -77,8 +77,9 @@ def health(shop=Depends(scope)):
         "database": (
             "postgresql" if store.database_url().startswith("postgresql") else "sqlite"
         ),
-        "version": "0.6.0",
+        "version": "0.7.0",
         "shop_connection": "seller_oauth_read_only",
+        "shop_reads": ["products", "orders", "inventory"],
         "conversation_routing": model.mode() == "bailian",
     }
 

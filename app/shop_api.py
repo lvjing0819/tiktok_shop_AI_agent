@@ -48,7 +48,7 @@ class HideShopSecrets(logging.Filter):
         text = record.getMessage()
         return not any(
             part in text
-            for part in (*CALLBACK_PATHS, "auth.tiktok-shops.com", "/api/v2/token/")
+            for part in (*CALLBACK_PATHS, "auth.tiktok-shops.com", "/api/v2/token/", "shop_cipher")
         )
 
 
@@ -288,11 +288,13 @@ def sign(path, params, body, app_secret):
     return hmac.new(secret, secret + message + secret, hashlib.sha256).hexdigest()
 
 
-async def request_json(url, *, params, headers=None):
+async def request_json(url, *, params, headers=None, method="GET", content=None):
     # URLs are fixed by the adapter, never supplied by a model or API caller.
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.get(url, params=params, headers=headers)
+            response = await client.request(
+                method, url, params=params, headers=headers, content=content
+            )
             if response.status_code != 200:
                 raise ShopError(
                     f"TikTok Shop 服务返回 HTTP {response.status_code}，请核对网络、应用和授权"

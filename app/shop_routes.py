@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from urllib.parse import urlsplit, parse_qs
-from app import shop_api as shop
+from app import shop_api as shop, shop_read
 
 HEADERS = {
     "Cache-Control": "no-store",
@@ -160,6 +160,27 @@ def router(scope):
     async def shops(workspace=Depends(scope)):
         try:
             return await shop.shops(workspace)
+        except shop.ShopError as exc:
+            raise HTTPException(502, str(exc))
+
+    @r.post("/api/shop/products/query")
+    async def products(body: shop_read.ProductsQuery, workspace=Depends(scope)):
+        try:
+            return await shop_read.execute(workspace, "products", body)
+        except shop.ShopError as exc:
+            raise HTTPException(502, str(exc))
+
+    @r.post("/api/shop/orders/query")
+    async def orders(body: shop_read.OrdersQuery, workspace=Depends(scope)):
+        try:
+            return await shop_read.execute(workspace, "orders", body)
+        except shop.ShopError as exc:
+            raise HTTPException(502, str(exc))
+
+    @r.post("/api/shop/inventory/query")
+    async def inventory(body: shop_read.InventoryQuery, workspace=Depends(scope)):
+        try:
+            return await shop_read.execute(workspace, "inventory", body)
         except shop.ShopError as exc:
             raise HTTPException(502, str(exc))
 
