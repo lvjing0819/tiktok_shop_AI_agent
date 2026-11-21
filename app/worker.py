@@ -66,6 +66,8 @@ def main():
         process_one()
         return
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     while True:
         try:
             if not process_one():

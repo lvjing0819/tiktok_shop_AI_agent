@@ -414,12 +414,85 @@ class TokenStorage:
             data["_service"] = self.service.prefix
             data["_server"] = self.service.url
             data[key] = value
+            if key == 'tokens':
+                ttl = value.get('expires_in')
+                data['_token_expires_at'] = time.time() + max(0, ttl) if isinstance(ttl, (int, float)) else None
             item["sealed"] = self.service.seal(data)
             store.put(conn, self.service.kind("connection"), item, self.shop)
 
     async def get_tokens(self):
-        value = self.read().get("tokens")
+        data = self.read()
+        value = data.get("tokens")
+        # MCP SDK 1.30 reloads relative expires_in without its original issue
+        # time, and a 401 starts authorization rather than refreshing. Social
+        # needs refresh before that request, using persisted absolute expiry.
+        if (self.service.prefix == 'social' and value and value.get('refresh_token')
+                and data.get('client') and (data.get('_token_expires_at') or 0) <= time.time()+60):
+            return await self._refresh_social_tokens()
         return OAuthToken.model_validate(value) if value else None
+
+    async def _refresh_social_tokens(self):
+        owner = str(uuid4())
+        for attempt in range(70):
+            with store.db(write=True) as conn:
+                item = self.service.locked_connection(conn, self.shop, self.generation)
+                data = self.service.unseal(item['sealed'])
+                if (data.get('_token_expires_at') or 0) > time.time()+60:
+                    return OAuthToken.model_validate(data['tokens'])
+                if item.get('token_refresh_until', 0) <= time.time():
+                    item.update(token_refresh_owner=owner, token_refresh_until=time.time()+120)
+                    store.put(conn, self.service.kind('connection'), item, self.shop)
+                    break
+            await asyncio.sleep(1)
+        else:
+            raise MCPError('TikTok Social 令牌正在刷新，请稍后重试')
+        try:
+            tokens, client = data['tokens'], data['client']
+            async with httpx.AsyncClient(timeout=30, follow_redirects=False) as http:
+                response = await http.get(self.service.url+'/oauth/.well-known/openid-configuration')
+                response.raise_for_status()
+                metadata = response.json()
+                issuer = str(metadata.get('issuer', '')).rstrip('/')
+                endpoint = metadata.get('token_endpoint', '')
+                parsed, expected = urlparse(endpoint), urlparse(issuer)
+                if (issuer != str(client.get('issuer', '')).rstrip('/')
+                        or issuer != self.service.url+'/oauth'
+                        or parsed.scheme != 'https' or parsed.hostname != 'business-api.tiktok.com'
+                        or parsed.netloc != expected.netloc or parsed.username or parsed.password or parsed.query
+                        or not parsed.path.startswith(expected.path+'/')):
+                    raise MCPError('Social 刷新服务地址校验失败，未发送任何令牌')
+                if client.get('token_endpoint_auth_method') != 'none':
+                    raise MCPError('当前 Social 客户端认证方式不支持自动刷新，请重新连接')
+                response = await http.post(endpoint, data={'grant_type':'refresh_token',
+                    'refresh_token':tokens['refresh_token'], 'client_id':client['client_id']})
+                if response.status_code != 200:
+                    raise MCPError('TikTok Social 授权刷新失败，请重新连接；未删除已保存凭据')
+                refreshed = response.json()
+                refreshed.setdefault('refresh_token', tokens['refresh_token'])
+                refreshed.setdefault('scope', tokens.get('scope'))
+                result = OAuthToken.model_validate(refreshed)
+                if set((result.scope or '').split()) - set((tokens.get('scope') or '').split()):
+                    raise MCPError('Social 刷新响应权限与原授权不符，拒绝自动保存')
+            with store.db(write=True) as conn:
+                item = self.service.locked_connection(conn, self.shop, self.generation)
+                if item.get('token_refresh_owner') != owner:
+                    raise MCPError('Social 刷新执行权已变化，未覆盖凭据')
+                data = self.service.unseal(item['sealed'])
+                data['tokens'] = result.model_dump(mode='json')
+                data['_token_expires_at'] = time.time()+max(0, result.expires_in or 0)
+                item.update(sealed=self.service.seal(data), token_refresh_owner=None, token_refresh_until=0)
+                store.put(conn, self.service.kind('connection'), item, self.shop)
+            return result
+        except MCPError:
+            raise
+        except Exception:
+            raise MCPError('Social 令牌刷新未完成，请检查网络后重试') from None
+        finally:
+            with store.db(write=True) as conn:
+                item = store.get(self.service.prefix+':'+self.shop, self.service.kind('connection'), self.shop, conn)
+                if item and item.get('generation') == self.generation and item.get('token_refresh_owner') == owner:
+                    item.update(token_refresh_owner=None, token_refresh_until=0)
+                    store.put(conn, self.service.kind('connection'), item, self.shop)
 
     async def set_tokens(self, tokens):
         self.write("tokens", tokens.model_dump(mode="json"))

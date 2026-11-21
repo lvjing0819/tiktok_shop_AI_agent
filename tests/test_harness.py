@@ -61,6 +61,7 @@ def test_plan_execute_handoff_telemetry_and_scoped_trace(setup):
     assert len(traces)==2 and all(t['status']=='completed' and t['duration_ms']>=0 for t in traces)
     assert client.get('/api/operations/'+run['id'],headers={'X-Shop-ID':'other'}).status_code==404
     assert client.get('/api/operations/metrics').json()['completed']==1
+    assert client.get('/api/operations').json()[0]['progress']=={'completed':2,'total':2}
 
 
 def test_invalid_dag_tool_ownership_and_parameters(setup):

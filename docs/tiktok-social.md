@@ -106,3 +106,9 @@ Social 查询读取已确认店铺偏好，保存独立 `social_report`；直接
 3. [自建 agent 连接](https://business-api.tiktok.com/portal/docs/how-to-connect-a-custom-agent-to-tiktok-social-mcp-server-as-a-developer/v1.3)，doc_id 1881372842952961。
 4. [用户 API token 认证](https://business-api.tiktok.com/portal/docs/authenticate-tiktok-social-mcp-server-requests-with-an-api-access-token-in-a-custom-agent/v1.3)，doc_id 1881372923264002。
 5. [工具列表](https://business-api.tiktok.com/portal/docs/available-tools-in-tiktok-social-mcp-server/v1.3)，doc_id 1881011302590657。
+
+## 令牌跨进程刷新修正
+
+`TokenStorage` 在加密记录中保存 `_token_expires_at`。对于已有 Social 刷新令牌和已注册客户端，绝对到期时间不足60秒或旧记录没有该时间时，会先从官方服务发现 token endpoint，再用原 refresh token 与 client_id 刷新。校验 issuer 与原客户端一致、固定 TikTok 域名/路径，拒绝重定向与扩大 scope；原响应未轮换 refresh token 时保留旧值。
+
+刷新由工作区、服务、连接 generation 及数据库租约约束。断开或重授权后，旧刷新不能覆盖新连接。请求失败不删除凭据；服务明确拒绝刷新时才提示重新连接。新增测试覆盖跨会话绝对到期、保留未轮换刷新令牌、错误端点不发送凭据，以及刷新失败后释放租约。

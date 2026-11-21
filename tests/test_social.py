@@ -491,3 +491,49 @@ def test_login_redirect_uses_current_attempt(client):
     assert response.status_code == 303
     assert response.headers["location"] == a["authorization_url"]
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_expired_social_tokens_refresh_before_mcp_request_and_keep_absolute_expiry(client,monkeypatch):
+    c,_=social.begin_connection('default');storage=TokenStorage(social.client,'default',c['generation'])
+    storage.write('client',{'client_id':'fake-client','issuer':social.client.url+'/oauth','token_endpoint_auth_method':'none'})
+    asyncio.run(storage.set_tokens(OAuthToken(access_token='old-test-token',refresh_token='old-refresh-test',expires_in=-1,scope='video.list')))
+    requests=[];real=httpx.AsyncClient
+    def handle(r):
+        requests.append(r)
+        if r.method=='GET':return httpx.Response(200,json={'issuer':social.client.url+'/oauth','token_endpoint':social.client.url+'/oauth/tiktok/token'})
+        assert parse_qs(r.content.decode())['refresh_token']==['old-refresh-test']
+        return httpx.Response(200,json={'access_token':'new-test-token','expires_in':86400,'token_type':'Bearer','scope':'video.list'})
+    monkeypatch.setattr(httpx,'AsyncClient',lambda **kw:real(transport=httpx.MockTransport(handle),**kw))
+    token=asyncio.run(storage.get_tokens())
+    assert token.access_token=='new-test-token' and token.refresh_token=='old-refresh-test'
+    assert storage.read()['_token_expires_at']>time.time()+86000
+    assert asyncio.run(storage.get_tokens()).access_token=='new-test-token' and len(requests)==2
+    assert 'new-test-token' not in social.connection('default')['sealed']
+
+
+def test_social_refresh_rejects_foreign_endpoint_without_sending_credentials(client,monkeypatch):
+    c,_=social.begin_connection('default');storage=TokenStorage(social.client,'default',c['generation'])
+    storage.write('client',{'client_id':'fake-client','issuer':social.client.url+'/oauth','token_endpoint_auth_method':'none'})
+    asyncio.run(storage.set_tokens(OAuthToken(access_token='old-test',refresh_token='old-refresh',expires_in=-1,scope='video.list')))
+    real=httpx.AsyncClient;requests=[]
+    def handle(r):
+        requests.append(r)
+        return httpx.Response(200,json={'issuer':social.client.url+'/oauth','token_endpoint':'https://untrusted.test/token'})
+    monkeypatch.setattr(httpx,'AsyncClient',lambda **kw:real(transport=httpx.MockTransport(handle),**kw))
+    with pytest.raises(social.SocialError,match='地址校验'):asyncio.run(storage.get_tokens())
+    assert len(requests)==1 and storage.read()['tokens']['access_token']=='old-test'
+    assert social.connection('default')['token_refresh_owner'] is None
+
+
+def test_failed_social_refresh_keeps_credentials_and_releases_lease(client,monkeypatch):
+    c,_=social.begin_connection('default');storage=TokenStorage(social.client,'default',c['generation'])
+    storage.write('client',{'client_id':'fake-client','issuer':social.client.url+'/oauth','token_endpoint_auth_method':'none'})
+    asyncio.run(storage.set_tokens(OAuthToken(access_token='old-test',refresh_token='old-refresh',expires_in=-1,scope='video.list')))
+    real=httpx.AsyncClient
+    def handle(r):
+        if r.method=='GET':return httpx.Response(200,json={'issuer':social.client.url+'/oauth','token_endpoint':social.client.url+'/oauth/tiktok/token'})
+        return httpx.Response(400,json={'error':'invalid_grant'})
+    monkeypatch.setattr(httpx,'AsyncClient',lambda **kw:real(transport=httpx.MockTransport(handle),**kw))
+    with pytest.raises(social.SocialError,match='授权刷新失败'):asyncio.run(storage.get_tokens())
+    assert storage.read()['tokens']['access_token']=='old-test'
+    assert social.connection('default')['token_refresh_until']==0

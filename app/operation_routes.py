@@ -32,7 +32,7 @@ def router(scope):
     @r.get('/api/operations')
     def runs(workspace=Depends(scope)):
         rows=store.list_records('operation_run',workspace)
-        return [{k:v for k,v in item.items() if k not in ('steps','events','lease_owner')} for item in sorted(rows,key=lambda x:x['created_at'],reverse=True)[:100]]
+        return [{**{k:v for k,v in item.items() if k not in ('steps','events','lease_owner')}, 'progress':{'completed':sum(s['status']=='completed' for s in item['steps'].values()), 'total':len(item['plan']['steps'])}} for item in sorted(rows,key=lambda x:x['created_at'],reverse=True)[:100]]
     @r.post('/api/operations/plan',status_code=201)
     async def create(body:PlanRequest,workspace=Depends(scope)):
         try:return await leader.plan(workspace,body.question,body.budget)
