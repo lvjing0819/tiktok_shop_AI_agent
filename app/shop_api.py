@@ -14,7 +14,7 @@ from uuid import uuid4
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import delete, select
-from app import store
+from app import store, execution_context
 
 TOKEN_ROOT = "https://auth.tiktok-shops.com/api/v2/token"
 API_ROOT = "https://open-api.tiktokglobalshop.com"
@@ -290,6 +290,7 @@ def sign(path, params, body, app_secret):
 
 async def request_json(url, *, params, headers=None, method="GET", content=None):
     # URLs are fixed by the adapter, never supplied by a model or API caller.
+    execution_context.remote_call(urlsplit(url).path)
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
             response = await client.request(

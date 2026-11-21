@@ -8,7 +8,7 @@ from typing import TypedDict
 from uuid import uuid4
 from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
-from app import ads_mcp, model, memory, store
+from app import ads_mcp, model, memory, store, execution_context
 from app.mcp_results import success
 
 MAX_CALLS = 6
@@ -169,6 +169,7 @@ async def analyze(
                     raise ads_mcp.AdsError(
                         "模型生成的工具参数不符合官方定义，请缩小问题后重试"
                     ) from None
+                execution_context.remote_call("ads:" + name)
                 result = (await mcp.call_tool(name, args)).model_dump(
                     mode="json", by_alias=True
                 )

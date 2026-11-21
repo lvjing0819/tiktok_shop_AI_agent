@@ -404,3 +404,26 @@ def test_demo_mode_stays_explicitly_offline(client, monkeypatch):
     result = send(client, sid, "查账号粉丝").json()
     assert "未调用模型" in result["messages"][-1]["content"]
     assert "last_run" not in result
+
+
+def test_conversation_creates_leader_task_and_reads_persisted_delivery(client,monkeypatch):
+    from app import harness
+    step={'id':'stock','agent':'product','goal':'查看实物库存','tool':'business.inventory','arguments':{},'success_criteria':'读取仓库记录且不使用渠道库存'}
+    def message(messages,tools):
+        names={t['function']['name'] for t in tools}
+        if 'plan_operation' in names:
+            if messages[-1]['content']=='完成了吗':return choice('operation_status',{})
+            return choice('plan_operation',{'question':'查看大陆和海外仓的实物库存','execute':True})
+        if 'submit_plan' in names:return choice('submit_plan',{'title':'查询实际库存','steps':[step]})
+        return choice('review_result',{'decision':'accept','summary':'已核对库存数据来源，尚无人工录入记录。'})
+    monkeypatch.setattr(model,'message',message)
+    session=client.post('/api/sessions',json={'title':'库存协作'}).json()
+    first=client.post('/api/sessions/'+session['id']+'/messages',json={'content':'查看大陆和海外仓的实物库存'})
+    assert first.status_code==200,first.text
+    runs=store.list_records('operation_run')
+    assert len(runs)==1 and runs[0]['status']=='queued'
+    assert harness.process_one()
+    answer=client.post('/api/sessions/'+session['id']+'/messages',json={'content':'完成了吗'})
+    assert answer.status_code==200,answer.text
+    assert 'warehouse_records' in answer.text and 'channel_inventory_is_physical' in answer.text
+    assert client.get('/api/operations/'+runs[0]['id'],headers={'X-Shop-ID':'other'}).status_code==404

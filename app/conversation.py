@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from jsonschema import Draft202012Validator
 from app import model, memory, ads_accounts, ads_analysis, social_agent, store
-from app import shop_api, shop_read, shop_conversation
+from app import shop_api, shop_read, shop_conversation, leader, harness
+from app.tool_registry import ExecutionError
 from app.mcp_results import payload, success
 
 
@@ -29,6 +30,8 @@ def function(name, description, properties, required):
 
 TEXT = {"type": "string", "minLength": 1, "maxLength": 4000}
 TOOLS = [
+    function("plan_operation", "复合运营任务、选品、实物库存、经营看板、文案或上架准备：由Leader创建可追踪任务。简单查询仍用已有专员。不把渠道库存当实物库存。", {"question":TEXT,"execute":{"type":"boolean","description":"用户明确要求执行查询/准备任务时为true；只要求规划时为false。外部写操作仍需审批。"}}, ["question"]),
+    function("operation_status", "查询当前工作区的Leader任务状态与实际结果。", {"run_id":{"type":"string","maxLength":64}}, []),
     function("list_shop_shops", "读取当前授权的 TikTok Shop 卖家店铺列表，与广告户、Social账号区分。", {}, []),
     function(
         "query_shop",
@@ -144,8 +147,8 @@ async def route(session_id, shop, text, messages, session):
 async def dispatch(session_id, shop, text, messages, session):
     context = dict(session.get("query_context") or {})
     instruction = (
-        "你负责内部运营会话的轻量路由。每轮必须且只能选择一个提供的函数。需要多个领域时请用户先选择一项。"
-        "广告消耗/广告户/GMV Max走Ads；自然账号粉丝/作品/评论/热门词走Social；卖家店铺列表走list_shop_shops，商品目录/订单/当前库存走query_shop。同一店铺可同时查订单与库存等多项。普通讨论用reply。"
+        "你负责内部运营会话的轻量路由。每轮必须且只能选择一个提供的函数。复合目标、跨领域任务可走plan_operation，由Leader拆分；不要求用户自己逐项拆解。"
+        "广告消耗/广告户/GMV Max走Ads；自然账号粉丝/作品/评论/热门词走Social；卖家店铺列表走list_shop_shops，商品目录/订单/渠道展示库存走query_shop；实物库存、大陆仓/海外仓库存、选品和上架准备走plan_operation。同一店铺可同时查订单与库存等多项。普通讨论用reply。"
         "优先当前用户要求，依据最近对话和query_context解析'这个账户、那前天呢'等指代。"
         "账户缺失时仍可query_ads，由后端列出真实授权账户追问，不编造ID或维护别名映射。"
         "昨天/前天使用relative_date，不自己按服务器日期换算；明确日期传start_date和end_date。"
@@ -174,7 +177,7 @@ async def dispatch(session_id, shop, text, messages, session):
     reply = await asyncio.to_thread(model.message, routed_messages, TOOLS)
     calls = reply.get("tool_calls") or []
     if not isinstance(calls, list) or len(calls) != 1:
-        raise model.ModelError("路由未返回单一有效操作，请每次查询一个领域后重试")
+        raise model.ModelError("路由未返回有效操作，请补充明确的业务目标后重试")
     fn = calls[0].get("function") if isinstance(calls[0], dict) else None
     if not isinstance(fn, dict):
         raise model.ModelError("路由操作格式无效")
@@ -219,6 +222,30 @@ async def dispatch(session_id, shop, text, messages, session):
             answer += f"\n证据记录：/api/sessions/{session_id}/runs/{run['id']}"
         return {"answer": answer, "run": run, "query_context": context}
 
+    if name == "plan_operation":
+        try:
+            operation=await leader.plan(shop,args['question'],session_id=session_id,context=context)
+            if args.get('execute') and operation['status']=='draft':
+                operation=harness.start(shop,operation['id'],operation['revision'])
+            context['last_operation_id']=operation['id']
+            run.update(operation_id=operation['id'],read_only=False)
+            lines=[f"{i+1}. {s['agent']}：{s['goal']}" for i,s in enumerate(operation['plan']['steps'])]
+            return finish(f"已创建运营任务：{operation['plan']['title']}\n状态：{operation['status']}\n"+'\n'.join(lines)+(('\n需要补充：'+operation['plan']['clarification']) if operation['plan'].get('clarification') else '')+f"\n任务编号：{operation['id']}。可在运营任务页查看实际进度；生成计划不代表已执行或已发布。", 'needs_input' if operation['status']=='waiting_input' else 'completed')
+        except (ExecutionError,model.ModelError) as exc:
+            return finish('运营任务规划失败：'+str(exc),'failed')
+    if name == "operation_status":
+        key=args.get('run_id') or context.get('last_operation_id')
+        if not key:return finish('请提供运营任务编号，或先创建任务。','needs_input')
+        try:
+            operation=harness.get(key,shop)
+        except LookupError:
+            return finish('当前工作区没有该运营任务。','needs_input')
+        summaries=[{'id':k,'status':v['status'],'summary':v.get('result',{}).get('agent_summary') or v.get('result',{}).get('summary'),'error':v.get('error'),'data':v.get('result',{}).get('data'),'evidence':v.get('result',{}).get('evidence',[])} for k,v in operation['steps'].items()]
+        run.update(operation_id=key,data_verified=any(v.get('result',{}).get('data_verified') for v in operation['steps'].values()))
+        detail=json.dumps(summaries,ensure_ascii=False)
+        if len(detail)>16000:detail=detail[:16000]+'\n（会话预览已截断，完整结果见运营任务详情）'
+        delivery=operation.get('final_delivery') or {}
+        return finish('任务状态：'+operation['status']+'\n'+delivery.get('answer','')+'\n'+detail+'\n完整任务：/api/operations/'+key)
     if name == "reply":
         return finish(
             args["message"], "needs_input" if args["kind"] == "clarify" else "completed"

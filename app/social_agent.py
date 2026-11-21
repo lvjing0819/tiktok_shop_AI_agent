@@ -6,7 +6,7 @@ import time
 from typing import TypedDict
 from uuid import uuid4
 from langgraph.graph import StateGraph, START, END
-from app import social_mcp as social, model, store, memory
+from app import social_mcp as social, model, store, memory, execution_context
 
 
 class State(TypedDict):
@@ -86,6 +86,7 @@ async def query(shop, question, conversation_context=None):
                 except (ValueError, TypeError):
                     raise social.SocialError("模型生成了无效工具参数") from None
                 name = function.get("name")
+                execution_context.remote_call("social:" + str(name))
                 result = await social.call(mcp, allowed, name, arguments)
                 eid = "S" + str(len(evidence) + 1)
                 evidence.append(

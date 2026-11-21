@@ -185,3 +185,17 @@ summary {
     flex-wrap: wrap;
   }
 }
+
+nav { flex-wrap: wrap; }
+select { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #ccd8d0; border-radius: 8px; background: white; color: inherit; font: inherit; }
+.table-scroll { overflow-x: auto; margin: 18px 0; }
+table { width: 100%; border-collapse: collapse; background: white; }
+th, td { text-align: left; padding: 12px; border-bottom: 1px solid #dde5dd; vertical-align: top; }
+th { font-size: 13px; white-space: nowrap; }
+td { font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.block { display: block; margin-top: 6px; }
+.notice { padding: 14px; background: #fff0ce; border-radius: 8px; }
+.json-editor { min-height: 320px; font-family: ui-monospace, monospace; font-size: 13px; }
+.check { width: auto; margin-right: 8px; }
+.operations-panel article { overflow-wrap: anywhere; }
+@media(max-width:700px) { main { padding: 16px; } nav { gap: 8px; } nav button { padding: 10px; } .business-panel .grid { grid-template-columns: 1fr; } }

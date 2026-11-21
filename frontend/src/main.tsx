@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import AdsPanel from "./AdsPanel";
+import OperationsPanel from "./OperationsPanel";
+import BusinessPanel from "./BusinessPanel";
 type Task = {
   id: string;
   status: string;
@@ -152,7 +154,7 @@ function App() {
         当前店铺：{shop} · 模型：
         {health.model_mode === "bailian" ? "百炼" : "离线演示"} · 数据库：
         {String(health.database || "连接中")}。图片、视频和 TikTok
-        上架尚为模拟。对话目前提供建议，创建任务请使用商品页。
+        上架尚未接入真实执行。复合任务可在运营对话或运营任务页创建；库存以仓库记录为准。
       </aside>
       {error && (
         <p className="error" role="alert">
@@ -163,7 +165,11 @@ function App() {
       <nav>
         {[
           ["chat", "运营对话"],
-          ["tasks", "商品任务"],
+          ["operations", "运营任务"],
+          ["inventory", "库存看板"],
+          ["orders", "订单看板"],
+          ["finance", "财务看板"],
+          ["tasks", "原商品任务"],
           ["memory", "店铺记忆"],
           ["ads", "广告分析"],
         ].map(([id, title]) => (
@@ -176,6 +182,8 @@ function App() {
           </button>
         ))}
       </nav>
+      {tab === "operations" && <OperationsPanel key={shop+token} api={api} />}
+      {["inventory","orders","finance"].includes(tab) && <BusinessPanel key={shop+token} api={api} initialTab={tab} />}
       {tab === "ads" && (
         <AdsPanel
           key={shop}

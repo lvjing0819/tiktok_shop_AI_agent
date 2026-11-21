@@ -5,7 +5,7 @@ import threading
 import time
 from dotenv import load_dotenv
 from langgraph.types import Command
-from app import store, model
+from app import store, model, business  # Register business tables before first DB access.
 from app.checkpoints import saver
 from app.workflow import build
 
@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 def process_one():
     job = store.claim()
     if not job:
-        return False
+        from app import harness, business_sync
+        return harness.process_one() or business_sync.process_one()
     stop = threading.Event()
     def heartbeat():
         while not stop.wait(20):

@@ -170,6 +170,12 @@ def test_bailian_request_contract(monkeypatch):
     assert model.complete('role','hello')=='连接成功'
     assert str(seen[0].url)=='https://example.test/compatible-mode/v1/chat/completions'
     assert json.loads(seen[0].content)['messages'][1]['content']=='hello'
+    from app import execution_context
+    token=execution_context.thinking.set(False)
+    try:
+        assert model.complete('role','summary')=='连接成功'
+        assert json.loads(seen[-1].content)['enable_thinking'] is False
+    finally:execution_context.thinking.reset(token)
 
 
 def test_memory_used_in_new_product_tasks(client):
