@@ -172,6 +172,10 @@ function App() {
     [shop, token],
   );
   function navigate(next: string, runId?: string) {
+    if (next === "chat") {
+      location.assign("/analytics.html?view=hub");
+      return;
+    }
     if (next === "overview") {
       location.assign("/analytics.html");
       return;
@@ -1147,8 +1151,13 @@ function Connections({ api, onAds }: { api: Api; onAds: () => void }) {
     </article>
   );
 }
-if (new URLSearchParams(location.search).get("view") === "overview") {
-  location.replace("/analytics.html");
+if (
+  !new URLSearchParams(location.search).get("view") ||
+  new URLSearchParams(location.search).get("view") === "chat"
+) {
+  location.replace("/analytics.html?view=hub");
+} else if (new URLSearchParams(location.search).get("view") === "overview") {
+  location.replace("/analytics.html?view=dashboard");
 } else {
   createRoot(document.getElementById("root")!).render(<App />);
 }

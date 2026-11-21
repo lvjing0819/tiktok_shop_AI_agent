@@ -1,39 +1,27 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TikTok Shop · 经营数据看板</title>
+    <title>A-Brain | Agent Hub &amp; TikTok Shop Analytics Pro</title>
     <style>
-      :root {
-        --bg-page: #f8fafc;
-        --bg-card: #ffffff;
-        --bg-subtle: #f1f5f9;
-        --text-primary: #0f172a;
-        --text-secondary: #475569;
-        --text-muted: #94a3b8;
-        --border-light: #e2e8f0;
-        --border-strong: #cbd5e1;
-        --accent-dark: #0f172a;
-        --accent-teal: #0d9488;
-        --accent-teal-soft: #f0fdfa;
-        --accent-blue: #2563eb;
-        --accent-blue-soft: #eff6ff;
-        --positive: #059669;
-        --positive-soft: #ecfdf5;
-        --negative: #dc2626;
-        --negative-soft: #fef2f2;
-        --warning: #d97706;
-        --warning-soft: #fffbeb;
-        --radius-card: 12px;
-        --radius-pill: 8px;
-        --pad-card: 20px;
-        --gap-grid: 16px;
+      @property --border-angle {
+        syntax: "<angle>";
+        inherits: true;
+        initial-value: 0deg;
       }
 
-      body.density-compact {
-        --pad-card: 14px;
-        --gap-grid: 12px;
+      :root {
+        --bg-void: #07080b;
+        --mouse-x: 50vw;
+        --mouse-y: 45vh;
+        --card-pad: 24px;
+        --section-gap: 24px;
+      }
+
+      body.compact-mode {
+        --card-pad: 18px;
+        --section-gap: 16px;
       }
 
       * {
@@ -44,251 +32,896 @@
 
       html,
       body {
-        background-color: var(--bg-page);
-        color: var(--text-primary);
+        min-height: 100%;
+        background-color: var(--bg-void);
+        color: #f5f5f7;
         font-family:
-          "Inter",
-          -apple-system,
-          BlinkMacSystemFont,
-          "PingFang SC",
-          "Microsoft YaHei",
-          sans-serif;
+          -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
         font-size: 14px;
-        line-height: 1.5;
-        -webkit-font-smoothing: antialiased;
+        line-height: 1.55;
         overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
       }
 
       .mono {
         font-family:
-          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", monospace;
         font-variant-numeric: tabular-nums;
       }
 
-      .grid-auto,
-      .grid-2,
-      .grid-3,
-      .grid-4,
-      .flex-row,
-      .card,
-      .panel-box {
-        min-width: 0;
+      .hidden {
+        display: none !important;
       }
 
-      .safe-text {
-        min-width: 0;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+      /* ================= 极光背景与聚光灯 ================= */
+      .aurora-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        overflow: hidden;
+        background: radial-gradient(circle at 50% 35%, #141824 0%, #07080b 76%);
       }
 
-      /* Top Bar */
+      .aurora-ribbon {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(110px);
+        opacity: 0.24;
+        mix-blend-mode: screen;
+        animation: auroraDrift 22s ease-in-out infinite alternate;
+      }
+
+      .aurora-1 {
+        top: -18%;
+        left: 10%;
+        width: 72vw;
+        height: 48vh;
+        background: radial-gradient(
+          circle,
+          rgba(99, 102, 241, 0.45),
+          rgba(56, 189, 248, 0.14) 60%,
+          transparent 80%
+        );
+      }
+
+      .aurora-2 {
+        bottom: -16%;
+        right: 6%;
+        width: 68vw;
+        height: 46vh;
+        background: radial-gradient(
+          circle,
+          rgba(20, 184, 166, 0.36),
+          rgba(139, 92, 246, 0.14) 62%,
+          transparent 80%
+        );
+        animation-duration: 26s;
+        animation-delay: -7s;
+      }
+
+      .aurora-3 {
+        top: 30%;
+        left: 30%;
+        width: 46vw;
+        height: 36vh;
+        background: radial-gradient(
+          circle,
+          rgba(244, 114, 182, 0.18),
+          transparent 72%
+        );
+        animation-duration: 19s;
+        animation-delay: -11s;
+      }
+
+      @keyframes auroraDrift {
+        0% {
+          transform: translate3d(-3%, -2%, 0) scale(1);
+        }
+        50% {
+          transform: translate3d(4%, 3%, 0) scale(1.06);
+        }
+        100% {
+          transform: translate3d(-2%, 4%, 0) scale(0.98);
+        }
+      }
+
+      .global-spotlight {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: radial-gradient(
+          640px circle at var(--mouse-x) var(--mouse-y),
+          rgba(255, 255, 255, 0.045),
+          transparent 68%
+        );
+      }
+
+      /* ================= 毛玻璃、流光边框、色散折射与新拟态 ================= */
+      @keyframes spinGlow {
+        to {
+          --border-angle: 360deg;
+        }
+      }
+
+      .glass-surface {
+        position: relative;
+        border-radius: 20px;
+        background: linear-gradient(
+          160deg,
+          rgba(25, 29, 40, 0.78),
+          rgba(12, 14, 20, 0.9)
+        );
+        backdrop-filter: blur(22px) saturate(175%);
+        -webkit-backdrop-filter: blur(22px) saturate(175%);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        box-shadow:
+          0 18px 42px -12px rgba(0, 0, 0, 0.8),
+          inset 0 1px 0 rgba(255, 255, 255, 0.09);
+        transition:
+          transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+          border-color 0.3s ease,
+          box-shadow 0.35s ease;
+        isolation: isolate;
+      }
+
+      .spotlight-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: radial-gradient(
+          260px circle at var(--card-x, 50%) var(--card-y, 50%),
+          rgba(255, 255, 255, 0.11),
+          transparent 70%
+        );
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .spotlight-card:hover::before {
+        opacity: 1;
+      }
+
+      .flowing-border {
+        position: absolute;
+        inset: -1.5px;
+        border-radius: inherit;
+        padding: 1.5px;
+        background: conic-gradient(
+          from var(--border-angle),
+          transparent 16%,
+          rgba(var(--accent-rgb, 148, 163, 184), 0.35) 36%,
+          rgba(255, 255, 255, 0.95) 50%,
+          rgba(var(--accent-rgb, 148, 163, 184), 0.42) 64%,
+          transparent 84%
+        );
+        -webkit-mask:
+          linear-gradient(#fff 0 0) content-box,
+          linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.35s ease;
+        animation: spinGlow 4.5s linear infinite;
+        z-index: 2;
+      }
+
+      .spotlight-card:hover .flowing-border,
+      .agent-card.is-selected .flowing-border {
+        opacity: 0.85;
+      }
+
+      .dispersion-rim {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.35s ease;
+        box-shadow:
+          inset 1.5px 0 4px rgba(255, 95, 130, 0.26),
+          inset -1.5px 0 4px rgba(65, 220, 255, 0.28);
+        z-index: 2;
+      }
+
+      .spotlight-card:hover .dispersion-rim,
+      .agent-card.is-selected .dispersion-rim {
+        opacity: 1;
+      }
+
+      .neu-well {
+        background: rgba(11, 13, 19, 0.88);
+        box-shadow:
+          inset 4px 4px 9px rgba(2, 3, 5, 0.92),
+          inset -3px -3px 7px rgba(255, 255, 255, 0.05),
+          0 0 0 1px rgba(255, 255, 255, 0.07);
+      }
+
+      .neu-pill-active {
+        background: linear-gradient(145deg, #2b3040, #191d28);
+        color: #ffffff;
+        box-shadow:
+          0 4px 12px rgba(0, 0, 0, 0.55),
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          -1px 0 6px rgba(255, 95, 130, 0.16),
+          1px 0 6px rgba(65, 220, 255, 0.16);
+      }
+
+      .neu-icon-well {
+        width: 56px;
+        height: 56px;
+        border-radius: 9999px;
+        background: linear-gradient(145deg, #101218, #1c202b);
+        box-shadow:
+          inset 5px 5px 10px rgba(3, 4, 7, 0.9),
+          inset -4px -4px 8px rgba(255, 255, 255, 0.06),
+          0 0 22px rgba(var(--accent-rgb, 148, 163, 184), 0.24);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 0.35s ease;
+      }
+
+      .agent-card:hover .neu-icon-well,
+      .agent-card.is-selected .neu-icon-well {
+        transform: scale(1.06);
+        box-shadow:
+          inset 4px 4px 9px rgba(3, 4, 7, 0.88),
+          inset -3px -3px 8px rgba(255, 255, 255, 0.12),
+          0 0 30px rgba(var(--accent-rgb, 148, 163, 184), 0.45),
+          -2px 0 8px rgba(255, 95, 130, 0.22),
+          2px 0 8px rgba(65, 220, 255, 0.22);
+      }
+
+      .neu-btn {
+        background: linear-gradient(145deg, #272c3a, #171a24);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow:
+          4px 4px 10px rgba(2, 3, 5, 0.88),
+          -2px -2px 6px rgba(255, 255, 255, 0.07),
+          inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        transition:
+          transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+          background 0.2s ease;
+      }
+
+      .neu-btn:hover {
+        background: linear-gradient(145deg, #32384a, #1d212e);
+      }
+
+      .magnetic {
+        transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: transform;
+      }
+
+      /* 粘性融合光滴 */
+      .gooey-stage {
+        filter: url(#gooey-fusion);
+      }
+
+      @keyframes gooPulse {
+        0%,
+        100% {
+          transform: translateX(0) scale(1);
+        }
+        50% {
+          transform: translateX(-10px) scale(0.8);
+        }
+      }
+
+      .goo-droplet {
+        animation: gooPulse 3.2s ease-in-out infinite;
+      }
+
+      /* ================= 顶部导航栏 ================= */
       .topbar {
-        background: var(--bg-card);
-        border-bottom: 1px solid var(--border-light);
         position: sticky;
         top: 0;
         z-index: 30;
+        background: rgba(8, 9, 13, 0.76);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       .topbar-inner {
-        max-width: 1440px;
+        max-width: 1400px;
         margin: 0 auto;
         padding: 12px 24px;
+        min-height: 60px;
         display: flex;
         flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .brand-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .brand-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: transparent;
+        border: none;
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .brand-divider {
+        width: 1px;
+        height: 16px;
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      .brand-sub {
+        font-size: 13px;
+        color: #9ca3af;
+      }
+
+      .nav-switcher {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 999px;
+      }
+
+      .nav-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 16px;
+        border-radius: 999px;
+        border: none;
+        background: transparent;
+        color: #9ca3af;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .nav-tab:hover {
+        color: #ffffff;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .exit-btn {
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        font-size: 13px;
+        cursor: pointer;
+        padding: 4px 8px;
+      }
+
+      .exit-btn:hover {
+        color: #ffffff;
+      }
+
+      .avatar-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #e5e7eb;
+        cursor: pointer;
+      }
+
+      /* ================= 对话中心首屏 ================= */
+      .page-shell {
+        position: relative;
+        z-index: 10;
+        min-height: calc(100vh - 60px);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .hub-main {
+        flex: 1;
+        max-width: 920px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 36px 24px 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .hero-header {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+
+      .hero-kicker {
+        font-size: 13px;
+        color: #8e929f;
+        letter-spacing: 0.04em;
+        margin-bottom: 10px;
+      }
+
+      .hero-title {
+        font-size: clamp(28px, 4.2vw, 40px);
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        color: #f5f5f7;
+      }
+
+      .agents-grid {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .agent-card {
+        padding: 26px 18px 22px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        cursor: pointer;
+        background-clip: padding-box;
+      }
+
+      .agent-card:hover {
+        transform: translateY(-4px);
+      }
+
+      .agent-card.is-selected {
+        box-shadow:
+          0 22px 48px -12px rgba(0, 0, 0, 0.9),
+          -3px -1px 18px rgba(255, 95, 130, 0.24),
+          3px 1px 18px rgba(65, 220, 255, 0.26),
+          0 0 26px rgba(var(--accent-rgb, 148, 163, 184), 0.28),
+          inset 0 1px 1px rgba(255, 255, 255, 0.26);
+      }
+
+      .agent-name {
+        margin-top: 14px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #f3f4f6;
+        letter-spacing: -0.01em;
+      }
+
+      .agent-role {
+        margin-top: 4px;
+        font-size: 12px;
+        color: #8e929f;
+      }
+
+      .bottom-row-spacer {
+        display: none;
+      }
+
+      @media (min-width: 768px) {
+        .agents-grid > .agent-card:nth-child(4) {
+          grid-column: 1 / span 1;
+          justify-self: end;
+          width: calc(100% - 9px);
+        }
+
+        .agents-grid > .agent-card:nth-child(5) {
+          grid-column: 2 / span 2;
+          justify-self: start;
+          width: calc(50% - 9px);
+        }
+      }
+
+      @media (max-width: 767px) {
+        .agents-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .agents-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* 底部胶囊输入框 */
+      .command-footer {
+        position: relative;
+        z-index: 20;
+        width: 100%;
+        padding: 12px 16px 32px;
+        display: flex;
+        justify-content: center;
+      }
+
+      .command-form {
+        width: 100%;
+        max-width: 540px;
+      }
+
+      .capsule-box {
+        height: 52px;
+        border-radius: 999px;
+        padding: 0 8px 0 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .capsule-input {
+        flex: 1;
+        min-width: 0;
+        background: transparent;
+        border: none;
+        color: #ffffff;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .capsule-input::placeholder {
+        color: #6b7280;
+      }
+
+      .send-wrap {
+        position: relative;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .send-btn {
+        position: relative;
+        z-index: 10;
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        color: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      /* 毛玻璃对话抽屉浮层 */
+      .chat-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        background: rgba(5, 6, 9, 0.72);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+      }
+
+      .chat-dialog {
+        width: 100%;
+        max-width: 640px;
+        max-height: 78vh;
+        border-radius: 22px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .chat-head {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
       }
 
-      .brand-group {
+      .chat-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 18px 20px;
         display: flex;
-        align-items: center;
+        flex-direction: column;
         gap: 12px;
-        min-width: 0;
       }
 
-      .brand-badge {
-        background: var(--accent-dark);
+      .msg-row {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .msg-row.user {
+        align-items: flex-end;
+      }
+
+      .msg-row.bot {
+        align-items: flex-start;
+      }
+
+      .msg-bubble {
+        max-width: 85%;
+        padding: 10px 14px;
+        border-radius: 16px;
+        font-size: 13.5px;
+        line-height: 1.55;
+        white-space: pre-line;
+      }
+
+      .msg-row.user .msg-bubble {
+        background: rgba(255, 255, 255, 0.14);
         color: #ffffff;
-        font-weight: 700;
-        font-size: 12px;
-        padding: 5px 10px;
-        border-radius: 7px;
-        letter-spacing: 0.04em;
-        white-space: nowrap;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-bottom-right-radius: 4px;
       }
 
-      .brand-title {
+      .msg-row.bot .msg-bubble {
+        background: rgba(11, 13, 19, 0.85);
+        color: #e5e7eb;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-bottom-left-radius: 4px;
+      }
+
+      /* ================= 数据看板视图（间距充足、边界清晰） ================= */
+      .dash-container {
+        max-width: 1360px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 28px 24px 64px;
+        display: flex;
+        flex-direction: column;
+        gap: var(--section-gap);
+      }
+
+      .dash-section {
+        padding: var(--card-pad);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .section-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: #60a5fa;
+        background: rgba(96, 165, 250, 0.14);
+        border: 1px solid rgba(96, 165, 250, 0.28);
+        padding: 2px 9px;
+        border-radius: 6px;
+        margin-bottom: 6px;
+      }
+
+      .section-title {
         font-size: 16px;
         font-weight: 700;
-        color: var(--text-primary);
-        white-space: nowrap;
+        color: #f5f5f7;
       }
 
-      .brand-sub {
-        font-size: 12px;
-        color: var(--text-muted);
-        white-space: nowrap;
+      .section-desc {
+        font-size: 12.5px;
+        color: #9ca3af;
+        margin-top: 3px;
       }
 
-      .filter-bar {
+      .badge-row {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 8px;
-        min-width: 0;
+      }
+
+      .badge-pill {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 11px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        color: #d1d5db;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+      }
+
+      .badge-pos {
+        background: rgba(52, 211, 153, 0.14);
+        color: #34d399;
+        border-color: rgba(52, 211, 153, 0.28);
+      }
+
+      .badge-neg {
+        background: rgba(248, 113, 113, 0.14);
+        color: #f87171;
+        border-color: rgba(248, 113, 113, 0.28);
+      }
+
+      .badge-warn {
+        background: rgba(251, 191, 36, 0.14);
+        color: #fbbf24;
+        border-color: rgba(251, 191, 36, 0.28);
+      }
+
+      /* 筛选条 */
+      .filter-panel {
+        padding: 16px 20px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .filter-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
         position: relative;
       }
 
-      .control-select {
-        background: var(--bg-card);
-        border: 1px solid var(--border-light);
-        color: var(--text-primary);
-        border-radius: var(--radius-pill);
-        padding: 6px 12px;
-        font-size: 13px;
+      .select-box {
+        padding: 7px 12px;
+        border-radius: 10px;
+        color: #f5f5f7;
+        font-size: 12.5px;
         font-weight: 500;
-        cursor: pointer;
         outline: none;
+        cursor: pointer;
       }
 
-      .control-select:hover {
-        border-color: var(--border-strong);
+      .select-box option {
+        background: #12151e;
+        color: #f5f5f7;
       }
 
-      /* Date & Compare Strip */
-      .date-strip-wrap {
+      .date-box {
         position: relative;
         display: inline-flex;
+        flex-wrap: wrap;
         align-items: center;
-        background: #ffffff;
-        border: 1px solid var(--border-light);
-        border-radius: 8px;
-        padding: 4px 10px;
-        gap: 8px;
-        font-size: 13px;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 10px;
+        font-size: 12px;
       }
 
-      .date-strip-wrap:focus-within {
-        border-color: var(--accent-teal);
-      }
-
-      .date-input-inline {
-        border: none;
+      .date-input {
+        width: 90px;
         background: transparent;
-        color: var(--text-primary);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 13px;
-        font-weight: 500;
-        width: 96px;
-        outline: none;
+        border: none;
+        color: #f5f5f7;
+        font-size: 12px;
         text-align: center;
+        outline: none;
         cursor: pointer;
       }
 
-      .date-sep {
-        color: var(--text-muted);
-        font-size: 12px;
-        user-select: none;
-      }
-
-      .compare-v-divider {
+      .v-line {
         width: 1px;
-        height: 16px;
-        background: var(--border-light);
-        margin: 0 2px;
+        height: 14px;
+        background: rgba(255, 255, 255, 0.12);
       }
 
-      .compare-label {
-        color: var(--text-muted);
+      .mini-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #d1d5db;
+        border-radius: 6px;
+        padding: 3px 7px;
         font-size: 12px;
-        user-select: none;
+        cursor: pointer;
       }
 
-      .compare-range-text {
-        color: var(--text-primary);
-        font-size: 12px;
-        font-weight: 500;
-        white-space: nowrap;
+      .mini-btn:hover {
+        border-color: rgba(45, 212, 191, 0.5);
+        color: #5eead4;
       }
 
-      .strip-icon-btn {
+      .seg-bar {
+        display: inline-flex;
+        flex-wrap: wrap;
+        padding: 3px;
+        border-radius: 10px;
+        gap: 2px;
+      }
+
+      .seg-item {
         border: none;
         background: transparent;
-        color: var(--text-secondary);
+        color: #9ca3af;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px 12px;
+        border-radius: 8px;
         cursor: pointer;
-        padding: 3px 5px;
-        border-radius: 4px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 13px;
       }
 
-      .strip-icon-btn:hover {
-        background: var(--bg-subtle);
-        color: var(--accent-teal);
+      .seg-item:hover {
+        color: #ffffff;
       }
 
-      /* Popover Date Range Picker */
+      /* 日期弹窗 */
       .date-popover {
         position: absolute;
-        top: calc(100% + 8px);
-        left: 0;
-        width: 680px;
+        top: calc(100% + 10px);
+        right: 0;
+        width: 660px;
         max-width: calc(100vw - 32px);
-        background: #ffffff;
-        border: 1px solid var(--border-light);
-        border-radius: 12px;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+        background: rgba(15, 18, 27, 0.97);
+        backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 16px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
         display: flex;
         overflow: hidden;
         z-index: 60;
       }
 
-      .date-popover.hidden {
-        display: none;
-      }
-
-      .date-presets {
-        width: 148px;
+      .preset-col {
+        width: 138px;
         flex-shrink: 0;
-        border-right: 1px solid var(--border-light);
-        padding: 14px 12px;
+        padding: 14px 10px;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        background: #ffffff;
+        gap: 8px;
+        background: rgba(9, 11, 17, 0.7);
       }
 
       .preset-btn {
-        width: 100%;
-        padding: 8px 10px;
-        border-radius: 6px;
-        border: 1px solid var(--border-light);
-        background: #ffffff;
-        color: var(--text-secondary);
-        font-size: 13px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        color: #9ca3af;
+        font-size: 12.5px;
         font-weight: 500;
         cursor: pointer;
-        text-align: center;
-        transition: all 0.15s ease;
-      }
-
-      .preset-btn:hover {
-        border-color: var(--accent-teal);
-        color: var(--accent-teal);
       }
 
       .preset-btn.active {
-        border-color: var(--accent-teal);
-        color: var(--accent-teal);
+        border-color: #2dd4bf;
+        color: #5eead4;
+        background: rgba(45, 212, 191, 0.14);
         font-weight: 600;
-        background: #ffffff;
       }
 
-      .date-calendar-pane {
+      .cal-pane {
         flex: 1;
         min-width: 0;
         padding: 14px 18px 16px;
@@ -297,291 +930,124 @@
         gap: 12px;
       }
 
-      .custom-tab-bar {
-        display: flex;
-        justify-content: center;
-      }
-
-      .custom-tab-pill {
-        border: 1px solid var(--accent-teal);
-        color: var(--accent-teal);
-        background: #ffffff;
-        border-radius: 6px;
-        padding: 5px 18px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-
-      .dual-calendars {
+      .cal-grid-2 {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 18px;
       }
 
-      .cal-month-head {
+      .cal-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 10px;
-        font-size: 13px;
+        margin-bottom: 8px;
+        font-size: 12.5px;
         font-weight: 600;
-        color: var(--text-primary);
       }
 
-      .cal-nav-group {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      .cal-nav-btn {
+      .cal-nav {
         border: none;
         background: transparent;
-        color: var(--text-secondary);
-        font-size: 13px;
+        color: #9ca3af;
         cursor: pointer;
-        padding: 2px 5px;
-        border-radius: 4px;
+        padding: 2px 6px;
+        border-radius: 5px;
       }
 
-      .cal-nav-btn:hover {
-        background: var(--bg-subtle);
-        color: var(--text-primary);
+      .cal-nav:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
       }
 
-      .cal-weekdays {
+      .cal-wk,
+      .cal-days {
         display: grid;
         grid-template-columns: repeat(7, 1fr);
         text-align: center;
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-bottom: 6px;
-      }
-
-      .cal-days-grid {
-        display: grid;
-        grid-template-columns: repeat(7, 1fr);
         gap: 2px;
-        text-align: center;
+      }
+
+      .cal-wk {
+        font-size: 11px;
+        color: #6b7280;
+        margin-bottom: 4px;
       }
 
       .cal-day {
-        height: 30px;
-        line-height: 30px;
+        height: 28px;
+        line-height: 28px;
         font-size: 12px;
         border-radius: 6px;
         cursor: pointer;
-        color: var(--text-primary);
-        position: relative;
-        user-select: none;
       }
 
       .cal-day:hover:not(.muted) {
-        background: var(--bg-subtle);
+        background: rgba(255, 255, 255, 0.09);
       }
 
       .cal-day.muted {
-        color: #cbd5e1;
-        background: #f8fafc;
+        color: #4b5563;
         cursor: default;
       }
 
       .cal-day.in-range {
-        background: #e6fffa;
-        color: #0f766e;
+        background: rgba(45, 212, 191, 0.16);
+        color: #5eead4;
         border-radius: 0;
       }
 
-      .cal-day.range-start {
-        background: var(--accent-teal);
-        color: #ffffff;
+      .cal-day.start {
+        background: #14b8a6;
+        color: #051113;
         font-weight: 700;
         border-radius: 6px 0 0 6px;
       }
 
-      .cal-day.range-end {
-        background: var(--accent-teal);
-        color: #ffffff;
+      .cal-day.end {
+        background: #14b8a6;
+        color: #051113;
         font-weight: 700;
         border-radius: 0 6px 6px 0;
       }
 
-      .cal-day.range-start.range-end {
+      .cal-day.start.end {
         border-radius: 6px;
       }
 
-      .cal-day.today-dot::after {
-        content: "";
-        position: absolute;
-        bottom: 3px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-        background: currentColor;
-      }
-
-      .date-popover-footer {
+      .cal-foot {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        border-top: 1px solid var(--border-light);
         padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
         font-size: 12px;
-        color: var(--text-secondary);
+        color: #9ca3af;
       }
 
-      .apply-range-btn {
-        background: var(--accent-teal);
-        color: #ffffff;
+      .apply-btn {
+        background: linear-gradient(135deg, #2dd4bf, #14b8a6);
+        color: #051113;
         border: none;
-        border-radius: 6px;
-        padding: 5px 12px;
+        border-radius: 8px;
+        padding: 6px 14px;
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 700;
         cursor: pointer;
       }
 
-      .seg-group {
-        display: inline-flex;
-        background: var(--bg-subtle);
-        padding: 3px;
-        border-radius: var(--radius-pill);
-        border: 1px solid var(--border-light);
+      /* KPI 四宫格 */
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+        gap: var(--section-gap);
       }
 
-      .seg-btn {
-        border: none;
-        background: transparent;
-        color: var(--text-secondary);
-        padding: 5px 11px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        transition: all 0.15s ease;
-      }
-
-      .seg-btn.active {
-        background: var(--bg-card);
-        color: var(--text-primary);
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-      }
-
-      /* Main Container */
-      .main-container {
-        max-width: 1440px;
-        margin: 0 auto;
-        padding: 20px 24px 56px;
+      .kpi-box {
+        padding: 20px 22px;
         display: flex;
         flex-direction: column;
-        gap: var(--gap-grid);
-      }
-
-      .card {
-        background: var(--bg-card);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-card);
-        padding: var(--pad-card);
-      }
-
-      .card-header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 16px;
-      }
-
-      .header-badges {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .module-tag {
-        display: inline-block;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        color: var(--accent-blue);
-        background: var(--accent-blue-soft);
-        padding: 2px 8px;
-        border-radius: 5px;
-        margin-bottom: 6px;
-      }
-
-      .card-title {
-        font-size: 16px;
-        font-weight: 700;
-        color: var(--text-primary);
-      }
-
-      .card-desc {
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-top: 2px;
-      }
-
-      .pill-badge {
-        font-size: 12px;
-        font-weight: 600;
-        padding: 4px 10px;
-        border-radius: 999px;
-        background: var(--bg-subtle);
-        color: var(--text-secondary);
-        white-space: nowrap;
-      }
-
-      .pill-pos {
-        background: var(--positive-soft);
-        color: var(--positive);
-      }
-
-      .pill-neg {
-        background: var(--negative-soft);
-        color: var(--negative);
-      }
-
-      .pill-warn {
-        background: var(--warning-soft);
-        color: var(--warning);
-      }
-
-      .grid-4 {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: var(--gap-grid);
-      }
-
-      .grid-2 {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-        gap: var(--gap-grid);
-      }
-
-      .grid-3 {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 12px;
-      }
-
-      /* Top KPI Cards */
-      .kpi-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-card);
-        padding: 18px 20px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
         gap: 10px;
       }
 
@@ -589,337 +1055,156 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        font-size: 12px;
+        font-size: 12.5px;
         font-weight: 600;
-        color: var(--text-secondary);
+        color: #9ca3af;
       }
 
-      .kpi-icon-box {
-        width: 26px;
-        height: 26px;
-        border-radius: 7px;
-        background: var(--bg-subtle);
-        color: var(--text-secondary);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 13px;
-        flex-shrink: 0;
-      }
-
-      .kpi-value-row {
-        display: flex;
-        align-items: baseline;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .kpi-main-num {
-        font-size: 28px;
+      .kpi-val {
+        font-size: 26px;
         font-weight: 700;
-        color: var(--text-primary);
-        line-height: 1.15;
+        color: #ffffff;
       }
 
-      .kpi-sub-inline {
+      .kpi-sub {
         font-size: 12px;
-        font-weight: 600;
+        color: #9ca3af;
       }
 
-      .kpi-bottom-text {
-        font-size: 12px;
-        color: var(--text-secondary);
+      /* 网格布局 */
+      .grid-2col {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 20px;
       }
 
-      /* Module 04 Payout Split Cards */
-      .payout-left-stack {
+      .grid-3col {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+
+      .sub-panel {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 16px;
+        background: rgba(9, 11, 17, 0.72);
+      }
+
+      .payout-stack {
         display: flex;
         flex-direction: column;
         gap: 12px;
       }
 
-      .payout-status-card {
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
+      .payout-item {
+        border-radius: 14px;
         padding: 14px 16px;
-        background: #ffffff;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        background: rgba(11, 14, 21, 0.8);
       }
 
-      .payout-status-card.normal {
-        border-color: #bbf7d0;
-        background: #f8fefa;
+      .payout-item.normal {
+        border-color: rgba(52, 211, 153, 0.28);
       }
 
-      .payout-status-card.pending {
-        border-color: #fde68a;
-        background: #fffdf7;
+      .payout-item.pending {
+        border-color: rgba(251, 191, 36, 0.28);
       }
 
-      .payout-status-card.negative {
-        border-color: #fecaca;
-        background: #fff9f9;
+      .payout-item.neg {
+        border-color: rgba(248, 113, 113, 0.3);
       }
 
-      .payout-card-head {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--text-primary);
-        margin-bottom: 8px;
-      }
-
-      .dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        display: inline-block;
-      }
-
-      .payout-card-body {
+      .payout-row {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
-        gap: 12px;
         flex-wrap: wrap;
-      }
-
-      .payout-count-num {
-        font-size: 24px;
-        font-weight: 700;
-        color: var(--text-primary);
-      }
-
-      .payout-amt-box {
-        text-align: right;
-      }
-
-      .payout-amt-label {
-        font-size: 11px;
-        color: var(--text-muted);
-      }
-
-      .payout-amt-val {
-        font-size: 18px;
-        font-weight: 700;
-      }
-
-      .payout-card-foot {
-        font-size: 12px;
-        color: var(--text-secondary);
+        gap: 10px;
         margin-top: 6px;
       }
 
-      .reason-panel {
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
-        padding: 16px;
-        background: #ffffff;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
       .reason-row {
+        padding: 9px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         display: flex;
         flex-direction: column;
-        gap: 5px;
-        padding: 8px 0;
-        border-bottom: 1px solid var(--bg-subtle);
+        gap: 6px;
       }
 
       .reason-row:last-child {
         border-bottom: none;
       }
 
-      .reason-row-top {
+      .reason-top {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
-        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
       }
 
-      .reason-tag {
-        font-size: 11px;
-        font-weight: 700;
-        padding: 2px 7px;
-        border-radius: 4px;
-      }
-
-      .tag-unpaid {
-        background: var(--warning-soft);
-        color: var(--warning);
-      }
-
-      .tag-neg {
-        background: var(--negative-soft);
-        color: var(--negative);
-      }
-
-      .reason-bar-track {
+      .bar-track {
         width: 100%;
-        height: 5px;
-        background: var(--bg-subtle);
+        height: 6px;
         border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
         overflow: hidden;
       }
 
-      .reason-bar-fill {
+      .bar-fill {
         height: 100%;
         border-radius: 999px;
       }
 
-      .recon-stat-card {
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
-        padding: 14px 16px;
-        background: var(--bg-page);
-      }
-
-      .recon-stat-label {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-secondary);
-        margin-bottom: 6px;
-      }
-
-      .recon-stat-main {
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--text-primary);
-      }
-
-      .recon-stat-sub {
-        font-size: 12px;
-        color: var(--text-muted);
-        margin-top: 4px;
-      }
-
-      .expense-list {
+      .exp-list {
         display: flex;
         flex-direction: column;
         gap: 8px;
       }
 
-      .expense-item {
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
-        padding: 11px 14px;
-        background: var(--bg-card);
+      .exp-row {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: rgba(11, 13, 20, 0.78);
         cursor: pointer;
-        transition: all 0.15s ease;
         display: flex;
         flex-direction: column;
         gap: 6px;
       }
 
-      .expense-item:hover {
-        border-color: var(--accent-blue);
-        background: #fafcff;
+      .exp-row:hover {
+        border-color: rgba(96, 165, 250, 0.45);
       }
 
-      .expense-item.active {
-        border-color: var(--accent-dark);
-        background: var(--bg-subtle);
+      .exp-row.active {
+        border-color: rgba(45, 212, 191, 0.6);
+        background: rgba(25, 31, 45, 0.92);
       }
 
-      .expense-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-      }
-
-      .expense-name {
-        font-weight: 600;
-        font-size: 13px;
-        color: var(--text-primary);
-      }
-
-      .expense-field {
-        font-size: 11px;
-        color: var(--text-muted);
-        margin-left: 6px;
-      }
-
-      .expense-amounts {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-shrink: 0;
-      }
-
-      .expense-bar-track {
-        width: 100%;
-        height: 6px;
-        background: var(--bg-subtle);
-        border-radius: 999px;
-        overflow: hidden;
-      }
-
-      .expense-bar-fill {
-        height: 100%;
-        background: var(--accent-dark);
-        border-radius: 999px;
-      }
-
-      .expense-meta-mini {
-        display: flex;
-        justify-content: space-between;
-        font-size: 12px;
-        color: var(--text-secondary);
-      }
-
-      .inspector-box {
-        border: 1px solid var(--border-strong);
-        border-radius: 10px;
-        padding: 16px;
-        background: var(--bg-page);
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .inspector-grid {
+      .inspector-metrics {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: 10px;
+        margin: 12px 0;
       }
 
-      .inspector-metric {
-        background: var(--bg-card);
-        border: 1px solid var(--border-light);
-        border-radius: 8px;
+      .insp-card {
         padding: 12px;
-      }
-
-      .inspector-metric-title {
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-bottom: 4px;
-      }
-
-      .inspector-metric-val {
-        font-size: 18px;
-        font-weight: 700;
-        color: var(--text-primary);
-      }
-
-      .inspector-metric-note {
-        font-size: 11px;
-        color: var(--text-muted);
-        margin-top: 2px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(18, 22, 32, 0.85);
       }
 
       .table-wrap {
         width: 100%;
         overflow-x: auto;
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 12px;
+        background: rgba(9, 11, 17, 0.72);
       }
 
       table {
@@ -930,1500 +1215,1636 @@
       }
 
       th {
-        background: var(--bg-subtle);
-        color: var(--text-secondary);
-        font-weight: 600;
-        font-size: 12px;
         padding: 10px 12px;
-        border-bottom: 1px solid var(--border-light);
+        font-size: 12px;
+        font-weight: 600;
+        color: #9ca3af;
+        background: rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         white-space: nowrap;
       }
 
       td {
         padding: 10px 12px;
-        border-bottom: 1px solid var(--border-light);
-        color: var(--text-primary);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        color: #f3f4f6;
         vertical-align: middle;
       }
 
-      tbody tr:last-child td {
-        border-bottom: none;
-      }
-
-      tbody tr.clickable-row {
+      tbody tr.sku-row {
         cursor: pointer;
-        transition: background 0.12s ease;
       }
 
-      tbody tr.clickable-row:hover {
-        background: var(--bg-subtle);
+      tbody tr.sku-row:hover {
+        background: rgba(255, 255, 255, 0.05);
       }
 
-      tbody tr.selected-row {
-        background: var(--accent-blue-soft);
+      tbody tr.sku-row.selected {
+        background: rgba(96, 165, 250, 0.14);
       }
 
-      .chart-box {
-        position: relative;
-        height: 250px;
-        width: 100%;
-      }
-
-      .diag-banner {
-        background: var(--bg-subtle);
-        border-left: 3px solid var(--accent-dark);
+      .diag-box {
         padding: 12px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        color: var(--text-primary);
-        margin-top: 12px;
-      }
-
-      .note-foot {
-        font-size: 12px;
-        color: var(--text-muted);
-        margin-top: 10px;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-
-      .density-fab {
-        position: fixed;
-        right: 20px;
-        bottom: 20px;
-        z-index: 40;
-        background: var(--bg-card);
-        border: 1px solid var(--border-strong);
-        border-radius: 999px;
-        padding: 4px;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
-        display: flex;
-        align-items: center;
-        gap: 2px;
-      }
-
-      .density-btn {
-        border: none;
-        background: transparent;
-        color: var(--text-secondary);
-        font-size: 12px;
-        font-weight: 600;
-        padding: 5px 10px;
-        border-radius: 999px;
-        cursor: pointer;
-      }
-
-      .density-btn.active {
-        background: var(--accent-dark);
-        color: #ffffff;
-      }
-
-      /* AI Data Insights & Interactive Q&A Module */
-      .ai-insight-card {
-        border: 1px solid #cbd5e1;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-      }
-
-      .ai-header-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        color: #0f766e;
-        background: #f0fdfa;
-        border: 1px solid #99f6e4;
-        padding: 3px 9px;
-        border-radius: 999px;
-        margin-bottom: 6px;
-      }
-
-      .ai-insights-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-
-      .ai-insight-item {
-        border: 1px solid var(--border-light);
-        background: var(--bg-card);
         border-radius: 10px;
-        padding: 14px 16px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        gap: 10px;
-        transition:
-          border-color 0.15s ease,
-          transform 0.15s ease;
+        background: rgba(255, 255, 255, 0.04);
+        border-left: 3px solid #2dd4bf;
+        font-size: 12.5px;
+        color: #e5e7eb;
       }
 
-      .ai-insight-item:hover {
-        border-color: var(--accent-teal);
-      }
-
-      .ai-insight-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-
-      .ai-severity {
-        font-size: 11px;
-        font-weight: 700;
-        padding: 2px 8px;
-        border-radius: 999px;
-      }
-
-      .ai-sev-high {
-        background: var(--negative-soft);
-        color: var(--negative);
-      }
-
-      .ai-sev-warn {
-        background: var(--warning-soft);
-        color: var(--warning);
-      }
-
-      .ai-sev-good {
-        background: var(--positive-soft);
-        color: var(--positive);
-      }
-
-      .ai-insight-title {
-        font-size: 14px;
-        font-weight: 700;
-        color: var(--text-primary);
-      }
-
-      .ai-insight-body {
-        font-size: 12px;
-        color: var(--text-secondary);
-        line-height: 1.55;
-      }
-
-      .ai-insight-action {
-        align-self: flex-start;
-        border: 1px solid var(--border-light);
-        background: var(--bg-subtle);
-        color: var(--text-primary);
-        font-size: 12px;
-        font-weight: 600;
-        padding: 5px 10px;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-
-      .ai-insight-action:hover {
-        border-color: var(--accent-teal);
-        color: var(--accent-teal);
-        background: #ffffff;
-      }
-
-      .ai-chat-panel {
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
-        background: var(--bg-card);
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .ai-chat-head {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-
-      .ai-quick-prompts {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .ai-chip-btn {
-        border: 1px solid var(--border-light);
-        background: var(--bg-page);
-        color: var(--text-secondary);
-        font-size: 12px;
-        font-weight: 500;
-        padding: 5px 11px;
-        border-radius: 999px;
-        cursor: pointer;
-        transition: all 0.15s ease;
-      }
-
-      .ai-chip-btn:hover {
-        border-color: var(--accent-teal);
-        color: var(--accent-teal);
-        background: #f0fdfa;
-      }
-
-      .ai-chat-log {
-        max-height: 300px;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding: 12px;
-        background: var(--bg-page);
-        border: 1px solid var(--border-light);
-        border-radius: 8px;
-      }
-
-      .ai-msg {
-        max-width: 88%;
-        padding: 10px 13px;
-        border-radius: 10px;
-        font-size: 13px;
-        line-height: 1.55;
-        white-space: pre-line;
-      }
-
-      .ai-msg-user {
-        align-self: flex-end;
-        background: var(--accent-dark);
-        color: #ffffff;
-      }
-
-      .ai-msg-bot {
-        align-self: flex-start;
-        background: #ffffff;
-        color: var(--text-primary);
-        border: 1px solid var(--border-light);
-      }
-
-      .ai-chat-form {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-
-      .ai-chat-input {
-        flex: 1;
-        min-width: 0;
-        border: 1px solid var(--border-strong);
-        border-radius: 8px;
-        padding: 9px 12px;
-        font-size: 13px;
-        color: var(--text-primary);
-        background: #ffffff;
-        outline: none;
-      }
-
-      .ai-chat-input:focus {
-        border-color: var(--accent-teal);
-      }
-
-      .ai-chat-send {
-        border: none;
-        background: var(--accent-teal);
-        color: #ffffff;
-        font-size: 13px;
-        font-weight: 600;
-        padding: 9px 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-
-      .ai-chat-send:hover {
-        background: #0f766e;
-      }
-
-      :root {
-        --text-muted: #64748b;
-      }
-      body {
-        font-family:
-          Inter,
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          "PingFang SC",
-          "Microsoft YaHei",
-          sans-serif;
-      }
-      .data-status {
-        padding: 14px 18px;
-        border: 1px solid #cbd5e1;
-        border-radius: 12px;
-        background: #fff;
-        color: #475569;
-        font-size: 13px;
-        line-height: 1.7;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-      }
-      .data-status.error {
-        background: #fff1f2;
-        border-color: #fecdd3;
-        color: #9f1239;
-      }
-      .source-coverage {
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        padding: 12px 18px;
-        border-radius: 12px;
-        margin: 12px 0 20px;
-        font-size: 12px;
-        color: #475569;
-      }
-      .source-coverage summary {
-        cursor: pointer;
-        font-weight: 600;
-      }
-      .coverage-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 8px;
-        margin-top: 12px;
-      }
-      .coverage-item {
-        padding: 12px;
-        background: #f8fafc;
-        border-radius: 8px;
-        line-height: 1.8;
-      }
-      .empty-data {
-        padding: 24px;
-        color: #64748b;
-        font-size: 13px;
-        line-height: 1.8;
-      }
-      .detail-dialog {
-        width: min(1100px, 94vw);
-        max-height: 85vh;
-        border: 1px solid #cbd5e1;
-        border-radius: 16px;
-        padding: 24px;
-        overflow: auto;
-        box-shadow: 0 24px 80px #0f172a33;
-      }
-      .detail-dialog::backdrop {
-        background: #0f172a66;
-      }
-      .detail-pagination {
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        justify-content: flex-end;
-        margin-top: 16px;
-      }
-      .detail-dialog th,
-      .detail-dialog td {
-        padding: 12px;
-        white-space: normal;
-        word-break: break-word;
-      }
-      .detail-dialog table {
+      .canvas-wrap {
+        position: relative;
         width: 100%;
-        border-collapse: collapse;
+        height: 220px;
+        border-radius: 10px;
+        background: rgba(7, 9, 14, 0.65);
+        border: 1px solid rgba(255, 255, 255, 0.06);
       }
-      .detail-dialog pre {
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 12px;
-      }
-      .metric-button {
-        border: 0;
-        background: transparent;
-        padding: 0;
-        color: #2563eb;
-        text-decoration: underline;
-        cursor: pointer;
-      }
-      .source-note {
-        font-size: 12px;
-        color: #64748b;
-        line-height: 1.8;
-        padding: 12px 0;
-      }
-      .filter-bar a {
-        text-decoration: none;
-      }
-      .ai-chat-log {
-        white-space: pre-wrap;
-      }
-      .chart-empty {
-        text-align: center;
-        color: #64748b;
-        font-size: 13px;
-        padding-top: 60px;
-      }
-      .topbar-inner {
-        gap: 16px;
-        flex-wrap: wrap;
-      }
-      .brand-group {
-        min-width: 250px;
-      }
-      .filter-bar {
-        flex: 1;
-      }
-      .data-status button {
-        white-space: nowrap;
-      }
-      button:disabled {
-        opacity: 0.5;
-        cursor: wait;
-      }
-      table th {
-        white-space: nowrap;
-      }
-      .mono {
-        font-variant-numeric: tabular-nums;
-      }
-      #detailView[aria-busy="true"] {
-        opacity: 0.65;
-        pointer-events: none;
-      }
-      .main-container {
-        padding-bottom: 80px;
-      }
-      #aiChatInput {
-        min-width: 0;
-      }
-      @media (max-width: 700px) {
-        .date-strip-wrap {
-          max-width: 100%;
-        }
-        .date-popover {
-          position: fixed;
-          left: 3vw;
-          right: 3vw;
-          top: 15vh;
-          width: 94vw;
-          max-height: 75vh;
-          overflow: auto;
-        }
-        .dual-calendars {
-          grid-template-columns: 1fr;
-        }
-        .filter-bar {
-          width: 100%;
-          gap: 8px;
-        }
-        .data-status {
-          font-size: 12px;
-        }
-        .detail-dialog {
-          padding: 16px;
-        }
-        .density-fab {
-          bottom: 8px;
-        }
-      }
-      #expenseList {
-        max-height: 530px;
-        overflow: auto;
-        padding-right: 6px;
-      }
-      .detail-dialog[open] {
+
+      .canvas-wrap canvas {
+        width: 100%;
+        height: 100%;
         display: block;
       }
-      .ai-chat-message {
-        padding: 14px 16px;
-        border-radius: 10px;
-        background: #f8fafc;
-        line-height: 1.8;
-        margin: 8px 0;
-        color: #334155;
-      }
-      .ai-chat-message.user {
-        background: #f0fdfa;
-        color: #115e59;
-      }
-      #aiChatLog:empty {
-        display: none;
-      }
-      .cal-day {
-        border: 0;
-        background: none;
-      }
-      .cal-day.in-range {
-        background: #e2e8f0;
-      }
-      .cal-day.range-start,
-      .cal-day.range-end {
-        background: #0f172a;
-        color: white;
-      }
-      .metric-button:focus-visible {
-        outline: 2px solid #2563eb;
-        outline-offset: 4px;
-      }
-      @media (max-width: 700px) {
-        .brand-group {
-          max-width: 100%;
-        }
-        .brand-sub {
-          white-space: normal;
-          line-height: 1.6;
-        }
-        .date-strip-wrap {
-          width: 100%;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          padding: 8px;
-        }
-        .date-strip-wrap .compare-v-divider {
-          display: none;
-        }
-        .compare-range-text {
-          white-space: normal;
-        }
-        .date-popover {
-          flex-direction: column;
-          max-width: 94vw;
-        }
-        .date-presets {
-          width: 100%;
-          flex-direction: row;
-          flex-wrap: wrap;
-          border-right: 0;
-          border-bottom: 1px solid #e2e8f0;
-        }
-        .preset-btn {
-          width: calc(50% - 5px);
-        }
-        .date-calendar-pane {
-          padding: 12px;
-        }
-        .cal-day {
-          min-width: 0;
-        }
-        .filter-bar .control-select {
-          max-width: 100%;
-        }
-        .topbar-inner {
-          min-width: 0;
-        }
-        .kpi-bottom-text {
-          white-space: normal;
-        }
-        .ai-chat-form {
-          flex-wrap: wrap;
-        }
-        .ai-chat-input {
-          width: 100%;
-        }
-        .ai-chat-send {
-          width: 100%;
-        }
-      }
-      .workspace-nav {
-        display: flex;
-        gap: 20px;
-        max-width: 1440px;
-        margin: 0 auto;
-        padding: 0 24px 12px;
-      }
-      .workspace-nav a {
+
+      .collapse-btn {
+        padding: 5px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.05);
+        color: #e5e7eb;
         font-size: 12px;
-        color: #64748b;
-        text-decoration: none;
-        padding: 6px 0;
-        border-bottom: 2px solid transparent;
-      }
-      .workspace-nav a[aria-current="page"] {
-        color: #0f766e;
-        border-color: #0f766e;
         font-weight: 600;
+        cursor: pointer;
       }
-      .workspace-nav a:hover {
-        color: #0f766e;
+
+      .collapse-btn:hover {
+        border-color: #2dd4bf;
+        color: #5eead4;
       }
-      @media (max-width: 700px) {
-        .dual-calendars > div:nth-child(2) {
-          display: none;
-        }
-        .workspace-nav {
-          gap: 16px;
-          padding: 0 24px 10px;
-        }
-        .date-popover-footer {
-          flex-wrap: wrap;
-          gap: 8px;
-        }
+
+      .ai-chat-log {
+        max-height: 240px;
+        overflow-y: auto;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(7, 9, 14, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .toast {
+        position: fixed;
+        top: 72px;
+        right: 24px;
+        z-index: 80;
+        padding: 9px 16px;
+        border-radius: 999px;
+        background: rgba(20, 24, 34, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #ffffff;
+        font-size: 12.5px;
+        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.7);
+        opacity: 0;
+        transform: translateY(-6px);
+        pointer-events: none;
+        transition: all 0.25s ease;
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
       }
     </style>
   </head>
   <body>
+    <!-- 液态粘性融合 SVG 滤镜 -->
+    <svg class="hidden" aria-hidden="true">
+      <defs>
+        <filter id="gooey-fusion">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+          <feColorMatrix
+            in="blur"
+            mode="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9"
+            result="goo"
+          />
+          <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+        </filter>
+      </defs>
+    </svg>
+
+    <!-- 极光背景与聚光灯 -->
+    <div class="aurora-layer" aria-hidden="true">
+      <div class="aurora-ribbon aurora-1"></div>
+      <div class="aurora-ribbon aurora-2"></div>
+      <div class="aurora-ribbon aurora-3"></div>
+    </div>
+    <div class="global-spotlight" aria-hidden="true"></div>
+
+    <!-- 顶部导航栏 -->
     <header class="topbar">
       <div class="topbar-inner">
-        <div class="brand-group">
-          <span class="brand-badge">TTS PRO</span>
-          <div class="safe-text">
-            <div class="brand-title">TikTok Shop 经营数据看板</div>
-            <div class="brand-sub" id="activeWindowSubtitle">
+        <div class="brand-box">
+          <button type="button" class="brand-btn magnetic" data-strength="0.22">
+            <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+              <path
+                d="M13.2 3.5L4.5 23.5H8.8L10.7 18.8H17.3L19.2 23.5H23.5L14.8 3.5H13.2ZM12.1 15.2L14 10.2L15.9 15.2H12.1Z"
+                fill="currentColor"
+              />
+            </svg>
+            <span>A-Brain</span>
+          </button>
+          <span class="brand-divider"></span>
+          <span class="brand-sub">Agent Hub</span>
+        </div>
+
+        <nav class="nav-switcher neu-well" aria-label="主视图切换">
+          <button type="button" id="navHubBtn" class="nav-tab neu-pill-active">
+            <span>对话中心</span>
+          </button>
+          <button type="button" id="navDashBtn" class="nav-tab">
+            <span>数据看板</span>
+            <span
+              style="
+                width: 6px;
+                height: 6px;
+                border-radius: 999px;
+                background: #22d3ee;
+              "
+            ></span>
+          </button>
+        </nav>
+
+        <div class="header-actions">
+          <a class="exit-btn" href="/?view=operations">任务中心</a
+          ><button id="historyBtn" class="exit-btn" type="button">
+            会话记录
+          </button>
+          <button
+            type="button"
+            title="清除本机访问令牌并返回设置"
+            id="clearAccessBtn"
+            class="exit-btn magnetic"
+            data-strength="0.25"
+          >
+            锁定
+          </button>
+          <button
+            type="button"
+            id="settingsBtn"
+            class="avatar-btn neu-btn magnetic"
+            data-strength="0.3"
+            aria-label="连接与设置"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M20 21a8 8 0 0 0-16 0" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <!-- ================= 一、默认首屏：对话中心 ================= -->
+      <main id="hubView" class="hub-main">
+        <div class="hero-header">
+          <p class="hero-kicker">公司 AI Agent 智能体对话中心</p>
+          <h1 class="hero-title">你想与公司中的谁对话？</h1>
+        </div>
+
+        <div class="agents-grid" id="agentsGrid">
+          <div
+            style="--accent-rgb: 226, 232, 240"
+            class="glass-surface spotlight-card agent-card is-selected"
+            data-agent="leader"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="neu-icon-well" style="position: relative; z-index: 3">
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#f8fafc"
+                stroke-width="1.8"
+              >
+                <path
+                  d="M12 3l2.6 5.3L20.5 9l-4.2 4.1 1 5.8L12 16.2 6.7 18.9l1-5.8L3.5 9l5.9-.7L12 3z"
+                />
+              </svg>
+            </div>
+            <div class="agent-name" style="position: relative; z-index: 3">
+              Leader Agent
+            </div>
+            <div class="agent-role" style="position: relative; z-index: 3">
+              任务规划与协作
+            </div>
+          </div>
+
+          <div
+            style="--accent-rgb: 52, 211, 153"
+            class="glass-surface spotlight-card agent-card"
+            data-agent="product"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="neu-icon-well" style="position: relative; z-index: 3">
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#34d399"
+                stroke-width="1.8"
+              >
+                <path d="M3 11l14-5v12L3 13v-2z" />
+                <path d="M17 8.5a4 4 0 0 1 0 7" />
+                <path d="M7 14l1 6h3l-1-6" />
+              </svg>
+            </div>
+            <div class="agent-name" style="position: relative; z-index: 3">
+              商品运营 Agent
+            </div>
+            <div class="agent-role" style="position: relative; z-index: 3">
+              商品运营
+            </div>
+          </div>
+
+          <div
+            style="--accent-rgb: 96, 165, 250"
+            class="glass-surface spotlight-card agent-card"
+            data-agent="ads"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="neu-icon-well" style="position: relative; z-index: 3">
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#60a5fa"
+                stroke-width="1.8"
+              >
+                <rect x="4" y="12" width="3.5" height="8" rx="1" />
+                <rect x="10.25" y="7" width="3.5" height="13" rx="1" />
+                <rect x="16.5" y="4" width="3.5" height="16" rx="1" />
+              </svg>
+            </div>
+            <div class="agent-name" style="position: relative; z-index: 3">
+              广告分析 Agent
+            </div>
+            <div class="agent-role" style="position: relative; z-index: 3">
+              广告分析
+            </div>
+          </div>
+
+          <div
+            style="--accent-rgb: 244, 114, 182"
+            class="glass-surface spotlight-card agent-card"
+            data-agent="research"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="neu-icon-well" style="position: relative; z-index: 3">
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#f472b6"
+                stroke-width="1.8"
+              >
+                <path d="M6 7h12l1 13H5L6 7z" />
+                <path d="M9 7a3 3 0 0 1 6 0" />
+              </svg>
+            </div>
+            <div class="agent-name" style="position: relative; z-index: 3">
+              选品研究 Agent
+            </div>
+            <div class="agent-role" style="position: relative; z-index: 3">
+              选品研究
+            </div>
+          </div>
+
+          <div
+            style="--accent-rgb: 129, 140, 248"
+            class="glass-surface spotlight-card agent-card"
+            data-agent="content"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="neu-icon-well" style="position: relative; z-index: 3">
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#818cf8"
+                stroke-width="1.8"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            </div>
+            <div class="agent-name" style="position: relative; z-index: 3">
+              内容策划 Agent
+            </div>
+            <div class="agent-role" style="position: relative; z-index: 3">
+              内容策划
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ================= 二、数据看板视图 ================= -->
+      <section id="dashboardView" class="dash-container hidden">
+        <!-- 顶部筛选条 -->
+        <div
+          class="glass-surface spotlight-card filter-panel"
+          style="--accent-rgb: 45, 212, 191"
+        >
+          <div class="flowing-border"></div>
+          <div class="dispersion-rim"></div>
+          <div style="position: relative; z-index: 3">
+            <div style="font-size: 15px; font-weight: 700; color: #ffffff">
+              TikTok Shop 订单与业财一体对账看板
+            </div>
+            <div
+              class="mono"
+              id="activeWindowSubtitle"
+              style="font-size: 12px; color: #9ca3af; margin-top: 2px"
+            >
               正在读取真实数据…
             </div>
           </div>
-        </div>
 
-        <div class="filter-bar">
-          <a href="/?view=chat" class="ai-chip-btn">← 运营助手</a
-          ><button id="refreshDataBtn" class="apply-range-btn">
-            刷新真实数据
-          </button>
-          <select
-            id="siteSelect"
-            class="control-select"
-            aria-label="选择站点"
-          ></select>
+          <div class="filter-controls" style="position: relative; z-index: 3">
+            <button type="button" id="refreshDataBtn" class="apply-btn">
+              刷新真实数据</button
+            ><select
+              id="siteSelect"
+              class="select-box neu-well"
+              aria-label="站点选择"
+            ></select>
 
-          <select
-            id="storeSelect"
-            class="control-select"
-            aria-label="选择店铺"
-          ></select>
+            <select
+              id="storeSelect"
+              class="select-box neu-well"
+              aria-label="店铺选择"
+            ></select>
 
-          <div class="date-strip-wrap" id="dateStripWrap">
-            <input
-              type="text"
-              id="startDateInput"
-              class="date-input-inline mono"
-              value="—"
-              aria-label="开始日期"
-            />
-            <span class="date-sep">-</span>
-            <input
-              type="text"
-              id="endDateInput"
-              class="date-input-inline mono"
-              value="—"
-              aria-label="结束日期"
-            />
-            <span class="compare-v-divider"></span>
-            <span class="compare-label">对比</span>
-            <span id="compareRangeText" class="compare-range-text mono"
-              >前一等长周期</span
-            >
-            <button
-              type="button"
-              id="openPickerBtn"
-              class="strip-icon-btn"
-              title="选择日期区间"
-            >
-              ✎
-            </button>
-            <button
-              type="button"
-              id="exportCsvBtn"
-              class="strip-icon-btn"
-              title="导出当前视图CSV"
-            >
-              ⬇
-            </button>
-            <button
-              type="button"
-              id="resetDefaultBtn"
-              class="strip-icon-btn"
-              title="重置为今天"
-            >
-              ◫
-            </button>
-
-            <div
-              id="datePopover"
-              class="date-popover hidden"
-              role="dialog"
-              aria-label="选择日期周期"
-            >
-              <div class="date-presets">
-                <button
-                  type="button"
-                  class="preset-btn"
-                  data-preset="today"
-                >
-                  今天
-                </button>
-                <button
-                  type="button"
-                  class="preset-btn"
-                  data-preset="yesterday"
-                >
-                  昨天
-                </button>
-                <button type="button" class="preset-btn" data-preset="last7">
-                  最近 7 天
-                </button>
-                <button type="button" class="preset-btn" data-preset="last30">
-                  最近 30 天
-                </button>
-              </div>
-              <div class="date-calendar-pane">
-                <div class="custom-tab-bar">
-                  <button
-                    type="button"
-                    id="customRangeBtn"
-                    class="custom-tab-pill"
-                  >
-                    自定义
-                  </button>
-                </div>
-                <div class="dual-calendars" id="dualCalendars"></div>
-                <div class="date-popover-footer">
-                  <span class="mono" id="rangePreviewText">已选：— - —</span>
-                  <button
-                    type="button"
-                    id="applyRangeBtn"
-                    class="apply-range-btn"
-                  >
-                    应用周期
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="seg-group" id="viewModeGroup">
-            <button type="button" class="seg-btn active" data-mode="detail">
-              单维度深度分析
-            </button>
-            <button type="button" class="seg-btn" data-mode="compare">
-              多站点/店铺横向对比
-            </button>
-          </div>
-        </div>
-      </div>
-      <nav class="workspace-nav" aria-label="数据工作台导航">
-        <a href="/analytics.html" aria-current="page">经营分析</a
-        ><a href="/?view=orders">订单中心</a
-        ><a href="/?view=inventory">实物库存</a
-        ><a href="/?view=finance">成本与利润</a>
-      </nav>
-    </header>
-
-    <main class="main-container">
-      <div id="dataStatus" class="data-status" role="status" aria-live="polite">
-        正在读取授权店铺…
-      </div>
-      <details class="source-coverage">
-        <summary>数据来源与更新状态</summary>
-        <div id="coverageContent"></div>
-      </details>
-      <section
-        id="detailView"
-        style="display: flex; flex-direction: column; gap: var(--gap-grid)"
-      >
-        <!-- Top 4 KPI Summary Cards -->
-        <div class="grid-4" id="topKpiGrid">
-          <div class="kpi-card">
-            <div class="kpi-top">
-              <span>总订单量 (Total Orders)</span>
-              <span class="kpi-icon-box">▦</span>
-            </div>
-            <div class="kpi-value-row">
-              <span class="kpi-main-num mono" id="kpiTotalOrders">--</span>
-            </div>
-            <div class="kpi-bottom-text mono" id="kpiGmvAov">
-              GMV: -- · AOV: --
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-top">
-              <span>已签收订单 (Delivered)</span>
-              <span class="kpi-icon-box" style="color: var(--positive)">✓</span>
-            </div>
-            <div class="kpi-value-row">
-              <span class="kpi-main-num mono" id="kpiDeliveredOrders">--</span>
-              <span
-                class="kpi-sub-inline mono"
-                style="color: var(--positive)"
-                id="kpiDeliveredRate"
-                >--%</span
-              >
-            </div>
-            <div class="kpi-bottom-text mono" id="kpiInTransit">
-              在途/待发: -- 单
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-top">
-              <span>已取消订单</span>
-              <span class="kpi-icon-box" style="color: var(--warning)">!</span>
-            </div>
-            <div class="kpi-value-row">
-              <span
-                class="kpi-main-num mono"
-                style="color: var(--warning)"
-                id="kpiUnsignedOrders"
-                >--</span
-              >
-              <span
-                class="kpi-sub-inline mono"
-                style="color: var(--text-secondary)"
-                id="kpiUnsignedRate"
-                >--%</span
-              >
-            </div>
-            <div class="kpi-bottom-text">
-              取消不等于物流异常；运输中单独统计
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-top">
-              <span>联盟实际佣金（已知部分）</span>
-              <span class="kpi-icon-box" style="color: var(--accent-blue)"
-                >∞</span
-              >
-            </div>
-            <div class="kpi-value-row">
-              <span class="kpi-main-num mono" id="kpiCreatorCommTotal">--</span>
-            </div>
-            <div class="kpi-bottom-text mono" id="kpiCreatorCommSplit">
-              标准 -- + 广告 --
-            </div>
-          </div>
-        </div>
-
-        <!-- AI Data Insights & Interactive Q&A Module -->
-        <article class="card ai-insight-card" id="aiInsightsModule">
-          <div class="card-header">
-            <div class="safe-text">
-              <span class="ai-header-badge">INSIGHTS · 经营信号与数据解读</span>
-              <h2 class="card-title">AI 关键数据洞察 &amp; 指标追问助手</h2>
-              <p class="card-desc">
-                基于当前筛选的站点、店铺与日期周期自动提炼核心经营信号；你也可以直接向
-                AI 提问对某项数据的理解与排查建议
-              </p>
-            </div>
-            <span class="pill-badge mono" id="aiContextBadge"
-              >上下文：MY · 全部店铺</span
-            >
-          </div>
-
-          <div class="ai-insights-grid" id="aiInsightsGrid"></div>
-
-          <div class="ai-chat-panel">
-            <div class="ai-chat-head">
-              <strong style="font-size: 14px"
-                >向 AI 追问当前数据（基于当前筛选的真实汇总）</strong
-              >
-              <button type="button" class="ai-chip-btn" id="clearAiChatBtn">
-                清空对话
-              </button>
-            </div>
-
-            <div class="ai-quick-prompts" id="aiQuickPrompts">
-              <button
-                type="button"
-                class="ai-chip-btn"
-                data-q="为什么会有负回款订单，优先排查哪几类原因？"
-              >
-                解读：负回款与未回款原因
-              </button>
-              <button
-                type="button"
-                class="ai-chip-btn"
-                data-q="当前各项支出里哪几项占营收比例或环比变化最值得关注？"
-              >
-                解读：支出项结构与环比
-              </button>
-              <button
-                type="button"
-                class="ai-chip-btn"
-                data-q="销量上升和销量下降的 SKU 主要受视频还是广告影响？"
-              >
-                解读：SKU 涨跌与证据
-              </button>
-              <button
-                type="button"
-                class="ai-chip-btn"
-                data-q="达人佣金支出和达人带货单量表现如何？"
-              >
-                解读：达人带货与双佣金
-              </button>
-              <button
-                type="button"
-                class="ai-chip-btn"
-                data-q="未签收异常单目前占比如何，主要卡在哪些环节？"
-              >
-                解读：未签收异常单分布
-              </button>
-            </div>
-
-            <div class="ai-chat-log" id="aiChatLog"></div>
-
-            <form class="ai-chat-form" id="aiChatForm">
+            <div class="date-box neu-well" id="dateStripWrap">
               <input
                 type="text"
-                id="aiChatInput"
-                class="ai-chat-input"
-                placeholder="例如：帮我分析一下当前已签收回款和负回款的情况，或者解释一下实际物流运费占营收的比例..."
-                autocomplete="off"
+                id="startDateInput"
+                class="date-input mono"
+                value=""
+                aria-label="开始日期"
               />
-              <button type="submit" class="ai-chat-send">发送提问</button>
-            </form>
+              <span style="color: #6b7280">-</span>
+              <input
+                type="text"
+                id="endDateInput"
+                class="date-input mono"
+                value=""
+                aria-label="结束日期"
+              />
+              <span class="v-line"></span>
+              <span style="color: #9ca3af; font-size: 11.5px">对比</span>
+              <span
+                id="compareRangeText"
+                class="mono"
+                style="color: #d1d5db; font-size: 11.5px"
+                >前一等长周期</span
+              >
+              <button
+                type="button"
+                id="openPickerBtn"
+                class="mini-btn"
+                title="打开日期选择弹窗"
+              >
+                日历
+              </button>
+              <button
+                type="button"
+                id="exportCsvBtn"
+                class="mini-btn"
+                title="导出支出 CSV"
+              >
+                CSV
+              </button>
+              <button
+                type="button"
+                id="resetDefaultBtn"
+                class="mini-btn"
+                title="重置为今天"
+              >
+                重置
+              </button>
+
+              <div
+                id="datePopover"
+                class="date-popover hidden"
+                role="dialog"
+                aria-label="日期周期与自定义选择"
+              >
+                <div class="preset-col">
+                  <button type="button" class="preset-btn" data-preset="today">
+                    今天
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    data-preset="yesterday"
+                  >
+                    昨天
+                  </button>
+                  <button type="button" class="preset-btn" data-preset="last7">
+                    最近 7 天
+                  </button>
+                  <button type="button" class="preset-btn" data-preset="last30">
+                    最近 30 天
+                  </button>
+                </div>
+                <div class="cal-pane">
+                  <div style="display: flex; justify-content: center">
+                    <button
+                      type="button"
+                      id="customRangeBtn"
+                      class="mini-btn"
+                      style="
+                        color: #5eead4;
+                        border-color: rgba(45, 212, 191, 0.45);
+                      "
+                    >
+                      自定义区间点选
+                    </button>
+                  </div>
+                  <div id="dualCalendars" class="cal-grid-2"></div>
+                  <div class="cal-foot">
+                    <span id="rangePreviewText" class="mono"
+                      >已选：尚未选择日期</span
+                    >
+                    <button type="button" id="applyRangeBtn" class="apply-btn">
+                      应用周期
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="seg-bar neu-well" id="viewModeGroup">
+              <button type="button" class="seg-item" data-mode="detail">
+                单维度深度分析
+              </button>
+              <button type="button" class="seg-item" data-mode="compare">
+                多站点横向对比
+              </button>
+            </div>
           </div>
-        </article>
+        </div>
 
-        <!-- Module 04: Payout Split + Reason Breakdown + Settlement & Expense Drilldown -->
-        <article class="card" id="module04">
-          <div class="card-header">
-            <div class="safe-text">
-              <span class="module-tag"
-                >MODULE 04 · 结算对账 · UTC 账单生成日期</span
+        <div
+          id="dataStatus"
+          class="data-status neu-well"
+          role="status"
+          aria-live="polite"
+        >
+          正在读取真实快照…
+        </div>
+        <details class="source-coverage glass-surface">
+          <summary>数据来源与更新时间</summary>
+          <div id="coverageContent"></div>
+        </details>
+        <nav class="data-links" aria-label="业务数据导航">
+          <a href="/?view=orders">订单中心 ↗</a
+          ><a href="/?view=inventory">实物库存 ↗</a
+          ><a href="/?view=finance">成本与利润 ↗</a>
+        </nav>
+        <!-- 单维度深度分析主体 -->
+        <div
+          id="detailView"
+          style="display: flex; flex-direction: column; gap: var(--section-gap)"
+        >
+          <!-- 核心 KPI 4 张卡片 -->
+          <div class="kpi-grid">
+            <div
+              style="--accent-rgb: 96, 165, 250"
+              class="glass-surface spotlight-card kpi-box"
+            >
+              <div class="flowing-border"></div>
+              <div class="dispersion-rim"></div>
+              <div class="kpi-top" style="position: relative; z-index: 3">
+                <span>总订单量 (Total Orders)</span>
+                <span class="mono" style="color: #60a5fa">ORD</span>
+              </div>
+              <div
+                class="kpi-val mono"
+                id="kpiTotalOrders"
+                style="position: relative; z-index: 3"
               >
-              <h2 class="card-title">结算流水、费用结构与订单明细</h2>
-              <p class="card-desc">
-                同时支持支出项金额分布与环比变化；点击任意支出项可查看「费用净额非零订单数」、「支出占该类订单金额比例」及「费用净额明确零订单数」
-              </p>
+                --
+              </div>
+              <div
+                class="kpi-sub mono"
+                id="kpiGmvAov"
+                style="position: relative; z-index: 3"
+              >
+                GMV: -- · AOV: --
+              </div>
             </div>
-            <div class="header-badges">
-              <span class="pill-badge mono" id="settledBadge"
-                >已结算订单：-- 单</span
+
+            <div
+              style="--accent-rgb: 52, 211, 153"
+              class="glass-surface spotlight-card kpi-box"
+            >
+              <div class="flowing-border"></div>
+              <div class="dispersion-rim"></div>
+              <div class="kpi-top" style="position: relative; z-index: 3">
+                <span>已签收订单 (Delivered)</span>
+                <span class="mono" style="color: #34d399">DLV</span>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  align-items: baseline;
+                  gap: 10px;
+                  position: relative;
+                  z-index: 3;
+                "
               >
-              <span class="pill-badge pill-pos mono" id="normalPayoutRateBadge"
-                >正常回款率 --%</span
+                <span class="kpi-val mono" id="kpiDeliveredOrders">--</span>
+                <span
+                  class="mono"
+                  id="kpiDeliveredRate"
+                  style="font-size: 13px; font-weight: 700; color: #34d399"
+                  >--%</span
+                >
+              </div>
+              <div
+                class="kpi-sub mono"
+                id="kpiInTransit"
+                style="position: relative; z-index: 3"
               >
+                在途/待发: -- 单
+              </div>
+            </div>
+
+            <div
+              style="--accent-rgb: 251, 191, 36"
+              class="glass-surface spotlight-card kpi-box"
+            >
+              <div class="flowing-border"></div>
+              <div class="dispersion-rim"></div>
+              <div class="kpi-top" style="position: relative; z-index: 3">
+                <span>已取消订单</span>
+                <span class="mono" style="color: #fbbf24">ABN</span>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  align-items: baseline;
+                  gap: 10px;
+                  position: relative;
+                  z-index: 3;
+                "
+              >
+                <span
+                  class="kpi-val mono"
+                  id="kpiUnsignedOrders"
+                  style="color: #fbbf24"
+                  >--</span
+                >
+                <span
+                  class="mono"
+                  id="kpiUnsignedRate"
+                  style="font-size: 13px; font-weight: 600; color: #d1d5db"
+                  >--%</span
+                >
+              </div>
+              <div class="kpi-sub" style="position: relative; z-index: 3">
+                在途与待发单独统计，取消不等于物流异常
+              </div>
+            </div>
+
+            <div
+              style="--accent-rgb: 129, 140, 248"
+              class="glass-surface spotlight-card kpi-box"
+            >
+              <div class="flowing-border"></div>
+              <div class="dispersion-rim"></div>
+              <div class="kpi-top" style="position: relative; z-index: 3">
+                <span>联盟实际佣金（已知部分） (标准+广告)</span>
+                <span class="mono" style="color: #818cf8">COM</span>
+              </div>
+              <div
+                class="kpi-val mono"
+                id="kpiCreatorCommTotal"
+                style="position: relative; z-index: 3"
+              >
+                --
+              </div>
+              <div
+                class="kpi-sub mono"
+                id="kpiCreatorCommSplit"
+                style="position: relative; z-index: 3"
+              >
+                标准 -- + 广告 --
+              </div>
             </div>
           </div>
 
-          <!-- Payout Split & Reason Breakdown -->
-          <div class="grid-2" style="margin-bottom: 20px">
-            <div class="payout-left-stack">
-              <div class="payout-status-card normal">
-                <div class="payout-card-head">
-                  <span class="dot" style="background: var(--positive)"></span>
-                  <span>本期正净结算订单</span>
-                </div>
-                <div class="payout-card-body">
-                  <div>
-                    <span class="payout-count-num mono" id="normalPayoutCount"
-                      >--</span
-                    >
-                    <span style="font-size: 12px; color: var(--text-secondary)">
-                      单</span
-                    >
-                    <span
-                      class="mono"
-                      style="
-                        font-size: 12px;
-                        color: var(--positive);
-                        font-weight: 600;
-                        margin-left: 6px;
-                      "
-                      id="normalPayoutPct"
-                      >占已签收 --%</span
-                    >
+          <!-- 模块 04：订单业财一体对账 -->
+          <article
+            style="--accent-rgb: 52, 211, 153"
+            class="glass-surface spotlight-card dash-section"
+            id="module04"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="section-head" style="position: relative; z-index: 3">
+              <div>
+                <span class="section-tag">MODULE 04 · 订单业财一体对账</span>
+                <h2 class="section-title">结算流水、费用结构与订单明细</h2>
+                <p class="section-desc">
+                  按 UTC
+                  账单生成日期统计，保留平台原始正负号；点击费用可查看对应订单。净结算不是利润或银行逐单到账。
+                </p>
+              </div>
+              <div class="badge-row">
+                <span class="badge-pill mono" id="settledBadge"
+                  >已结算 -- 单</span
+                >
+                <span
+                  class="badge-pill badge-pos mono"
+                  id="normalPayoutRateBadge"
+                  >正常回款率 --%</span
+                >
+              </div>
+            </div>
+
+            <div class="grid-2col" style="position: relative; z-index: 3">
+              <div class="payout-stack">
+                <div class="payout-item normal">
+                  <div
+                    style="font-size: 13px; font-weight: 700; color: #34d399"
+                  >
+                    本期正净结算订单
                   </div>
-                  <div class="payout-amt-box">
-                    <div class="payout-amt-label">正净结算额</div>
-                    <div
-                      class="payout-amt-val mono"
-                      style="color: var(--positive)"
-                      id="normalPayoutAmt"
-                    >
-                      --
+                  <div class="payout-row">
+                    <div>
+                      <span
+                        class="mono"
+                        style="font-size: 22px; font-weight: 700"
+                        id="normalPayoutCount"
+                        >--</span
+                      >
+                      <span style="font-size: 12px; color: #9ca3af"> 单</span>
+                      <span
+                        class="mono"
+                        style="
+                          font-size: 12px;
+                          color: #34d399;
+                          margin-left: 6px;
+                        "
+                        id="normalPayoutPct"
+                        >占本期结算订单 --%</span
+                      >
+                    </div>
+                    <div style="text-align: right">
+                      <div style="font-size: 11px; color: #9ca3af">
+                        正净结算额
+                      </div>
+                      <div
+                        class="mono"
+                        style="
+                          font-size: 16px;
+                          font-weight: 700;
+                          color: #34d399;
+                        "
+                        id="normalPayoutAmt"
+                      >
+                        --
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div class="payout-card-foot">
-                  本期订单结算流水合计大于零，非逐单银行到账
+
+                <div class="payout-item pending">
+                  <div
+                    style="font-size: 13px; font-weight: 700; color: #fbbf24"
+                  >
+                    本期零净结算订单
+                  </div>
+                  <div class="payout-row">
+                    <div>
+                      <span
+                        class="mono"
+                        style="font-size: 22px; font-weight: 700"
+                        id="unpaidPayoutCount"
+                        >--</span
+                      >
+                      <span style="font-size: 12px; color: #9ca3af"> 单</span>
+                      <span
+                        class="mono"
+                        style="
+                          font-size: 12px;
+                          color: #fbbf24;
+                          margin-left: 6px;
+                        "
+                        id="unpaidPayoutPct"
+                        >占本期结算订单 --%</span
+                      >
+                    </div>
+                    <div style="text-align: right">
+                      <div style="font-size: 11px; color: #9ca3af">
+                        零净结算额
+                      </div>
+                      <div
+                        class="mono"
+                        style="
+                          font-size: 16px;
+                          font-weight: 700;
+                          color: #fbbf24;
+                        "
+                        id="unpaidPayoutAmt"
+                      >
+                        --
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="payout-item neg">
+                  <div
+                    style="font-size: 13px; font-weight: 700; color: #f87171"
+                  >
+                    本期负净结算订单
+                  </div>
+                  <div class="payout-row">
+                    <div>
+                      <span
+                        class="mono"
+                        style="font-size: 22px; font-weight: 700"
+                        id="negPayoutCount"
+                        >--</span
+                      >
+                      <span style="font-size: 12px; color: #9ca3af"> 单</span>
+                      <span
+                        class="mono"
+                        style="
+                          font-size: 12px;
+                          color: #f87171;
+                          margin-left: 6px;
+                        "
+                        id="negPayoutPct"
+                        >占本期结算订单 --%</span
+                      >
+                    </div>
+                    <div style="text-align: right">
+                      <div style="font-size: 11px; color: #9ca3af">
+                        负净结算额
+                      </div>
+                      <div
+                        class="mono"
+                        style="
+                          font-size: 16px;
+                          font-weight: 700;
+                          color: #f87171;
+                        "
+                        id="negPayoutAmt"
+                      >
+                        --
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div class="payout-status-card pending">
-                <div class="payout-card-head">
-                  <span class="dot" style="background: var(--warning)"></span>
-                  <span>本期零净结算订单</span>
-                </div>
-                <div class="payout-card-body">
-                  <div>
-                    <span class="payout-count-num mono" id="unpaidPayoutCount"
-                      >--</span
-                    >
-                    <span style="font-size: 12px; color: var(--text-secondary)">
-                      单</span
-                    >
-                    <span
-                      class="mono"
-                      style="
-                        font-size: 12px;
-                        color: var(--warning);
-                        font-weight: 600;
-                        margin-left: 6px;
-                      "
-                      id="unpaidPayoutPct"
-                      >占已签收 --%</span
-                    >
-                  </div>
-                  <div class="payout-amt-box">
-                    <div class="payout-amt-label">零净结算额</div>
-                    <div
-                      class="payout-amt-val mono"
-                      style="color: var(--warning)"
-                      id="unpaidPayoutAmt"
-                    >
-                      --
-                    </div>
-                  </div>
-                </div>
-                <div class="payout-card-foot">
-                  明确返回零净额，不代表未回款或账期冻结
-                </div>
-              </div>
-
-              <div class="payout-status-card negative">
-                <div class="payout-card-head">
-                  <span class="dot" style="background: var(--negative)"></span>
-                  <span>本期负净结算订单</span>
-                </div>
-                <div class="payout-card-body">
-                  <div>
-                    <span class="payout-count-num mono" id="negPayoutCount"
-                      >--</span
-                    >
-                    <span style="font-size: 12px; color: var(--text-secondary)">
-                      单</span
+              <div
+                class="sub-panel"
+                style="
+                  display: flex;
+                  flex-direction: column;
+                  justify-content: space-between;
+                  gap: 12px;
+                "
+              >
+                <div>
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 8px;
+                    "
+                  >
+                    <strong style="font-size: 14px"
+                      >账单支付状态与调整流水</strong
                     >
                     <span
                       class="mono"
-                      style="
-                        font-size: 12px;
-                        color: var(--negative);
-                        font-weight: 600;
-                        margin-left: 6px;
-                      "
-                      id="negPayoutPct"
-                      >占已签收 --%</span
+                      style="font-size: 12px; color: #9ca3af"
+                      id="unpaidPlusNegTotal"
+                      >合计 -- 单</span
                     >
                   </div>
-                  <div class="payout-amt-box">
-                    <div class="payout-amt-label">负净结算额</div>
-                    <div
-                      class="payout-amt-val mono"
-                      style="color: var(--negative)"
-                      id="negPayoutAmt"
-                    >
-                      --
-                    </div>
-                  </div>
+                  <div id="payoutReasonList"></div>
                 </div>
-                <div class="payout-card-foot">
-                  净结算为负不等于净利润为负，仍需核对成本
+                <div
+                  style="
+                    font-size: 12px;
+                    color: #9ca3af;
+                    padding-top: 8px;
+                    border-top: 1px solid rgba(255, 255, 255, 0.07);
+                  "
+                >
+                  零净额不代表未回款；没有流水不能判断资金冻结。费用保留原始正负号，正数可能是补贴或退费。
                 </div>
               </div>
             </div>
 
-            <div class="reason-panel">
+            <div class="grid-3col" style="position: relative; z-index: 3">
+              <div class="sub-panel">
+                <div style="font-size: 12px; color: #9ca3af">
+                  总结算金额（已结算净额）
+                </div>
+                <div
+                  class="mono"
+                  style="font-size: 20px; font-weight: 700; margin-top: 4px"
+                  id="netSettlementVal"
+                >
+                  --
+                </div>
+                <div
+                  class="mono"
+                  style="font-size: 12px; color: #9ca3af; margin-top: 4px"
+                  id="netSettlementCompare"
+                >
+                  对比上期：--
+                </div>
+              </div>
+              <div class="sub-panel">
+                <div style="font-size: 12px; color: #9ca3af">
+                  已结算营收与费用合计
+                </div>
+                <div
+                  class="mono"
+                  style="font-size: 18px; font-weight: 700; margin-top: 4px"
+                  id="revAndFeeVal"
+                >
+                  --
+                </div>
+                <div
+                  class="mono"
+                  style="font-size: 12px; color: #9ca3af; margin-top: 4px"
+                  id="revAndFeeCompare"
+                >
+                  净结算率：--
+                </div>
+              </div>
+              <div class="sub-panel">
+                <div style="font-size: 12px; color: #9ca3af">
+                  本期账单已支付金额
+                </div>
+                <div
+                  class="mono"
+                  style="
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: #fbbf24;
+                    margin-top: 4px;
+                  "
+                  id="abnormalSettleVal"
+                >
+                  --
+                </div>
+                <div style="font-size: 12px; color: #9ca3af; margin-top: 4px">
+                  平台 PAID 状态的账单净结算额，银行到账以收款账户为准。
+                </div>
+              </div>
+            </div>
+
+            <div class="grid-2col" style="position: relative; z-index: 3">
               <div>
                 <div
                   style="
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    gap: 8px;
                     margin-bottom: 10px;
+                    gap: 8px;
                     flex-wrap: wrap;
                   "
                 >
-                  <strong style="font-size: 14px"
-                    >账单支付状态与调整流水</strong
+                  <strong style="font-size: 13.5px"
+                    >各项支出项分布与环比（点击穿透）</strong
                   >
                   <span
                     class="mono"
-                    style="font-size: 12px; color: var(--text-muted)"
-                    id="unpaidPlusNegTotal"
-                    >未回款+负回款: -- 单</span
+                    style="font-size: 12px; color: #9ca3af"
+                    id="totalExpenseSumLabel"
+                    >支出合计：--</span
                   >
                 </div>
-                <div id="payoutReasonList"></div>
+                <div id="expenseList" class="exp-list"></div>
               </div>
 
               <div
+                class="sub-panel"
                 style="
                   display: flex;
+                  flex-direction: column;
                   justify-content: space-between;
-                  align-items: center;
-                  gap: 8px;
-                  padding-top: 8px;
-                  border-top: 1px solid var(--border-light);
-                  font-size: 12px;
-                  color: var(--text-secondary);
-                  flex-wrap: wrap;
+                  gap: 10px;
                 "
               >
-                <span>结算日期与订单创建日期是不同口径，不做逐单到账推断</span>
-                <span class="mono" style="color: var(--text-muted)"
-                  >TikTok Shop Finance API</span
-                >
-              </div>
-            </div>
-          </div>
+                <div>
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: flex-start;
+                      gap: 8px;
+                    "
+                  >
+                    <div>
+                      <span class="section-tag" style="margin-bottom: 4px"
+                        >支出项订单穿透</span
+                      >
+                      <h3
+                        style="font-size: 15px; font-weight: 700"
+                        id="inspTitle"
+                      >
+                        --
+                      </h3>
+                      <p
+                        class="mono"
+                        style="font-size: 12px; color: #9ca3af"
+                        id="inspSub"
+                      >
+                        --
+                      </p>
+                    </div>
+                    <span class="badge-pill mono" id="inspMomBadge">--</span>
+                  </div>
 
-          <div class="grid-3" style="margin-bottom: 16px">
-            <div class="recon-stat-card">
-              <div class="recon-stat-label">总结算金额（已结算订单净额）</div>
-              <div class="recon-stat-main mono" id="netSettlementVal">--</div>
-              <div class="recon-stat-sub" id="netSettlementCompare">
-                对比上期：--
-              </div>
-            </div>
-            <div class="recon-stat-card">
-              <div class="recon-stat-label">
-                已结算订单营收（Total Revenue）与费用合计
-              </div>
-              <div class="recon-stat-main mono" id="revAndFeeVal">--</div>
-              <div class="recon-stat-sub" id="revAndFeeCompare">
-                净结算率：--
-              </div>
-            </div>
-            <div class="recon-stat-card">
-              <div class="recon-stat-label">本期账单已支付金额</div>
-              <div class="recon-stat-main mono" id="abnormalSettleVal">--</div>
-              <div class="recon-stat-sub">
-                平台PAID状态的账单净结算额；银行到账请以收款账户核对
-              </div>
-            </div>
-          </div>
+                  <div class="inspector-metrics">
+                    <div class="insp-card">
+                      <div style="font-size: 11.5px; color: #9ca3af">
+                        费用净额非零订单
+                      </div>
+                      <div
+                        class="mono"
+                        style="
+                          font-size: 17px;
+                          font-weight: 700;
+                          margin-top: 4px;
+                        "
+                        id="inspHasCount"
+                      >
+                        --
+                      </div>
+                      <div
+                        class="mono"
+                        style="font-size: 11px; color: #9ca3af; margin-top: 2px"
+                        id="inspHasRate"
+                      >
+                        占已结算 --%
+                      </div>
+                    </div>
+                    <div class="insp-card">
+                      <div style="font-size: 11.5px; color: #9ca3af">
+                        支出占对应营收比例
+                      </div>
+                      <div
+                        class="mono"
+                        style="
+                          font-size: 17px;
+                          font-weight: 700;
+                          color: #5eead4;
+                          margin-top: 4px;
+                        "
+                        id="inspShareRatio"
+                      >
+                        --%
+                      </div>
+                      <div
+                        class="mono"
+                        style="font-size: 11px; color: #9ca3af; margin-top: 2px"
+                        id="inspShareFormula"
+                      >
+                        支出 ÷ 对应订单营收
+                      </div>
+                    </div>
+                    <div class="insp-card">
+                      <div style="font-size: 11.5px; color: #9ca3af">
+                        费用净额明确零订单
+                      </div>
+                      <div
+                        class="mono"
+                        style="
+                          font-size: 17px;
+                          font-weight: 700;
+                          margin-top: 4px;
+                        "
+                        id="inspNoCount"
+                      >
+                        --
+                      </div>
+                      <div
+                        class="mono"
+                        style="font-size: 11px; color: #9ca3af; margin-top: 2px"
+                        id="inspNoNote"
+                      >
+                        占已结算 --%
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-          <div class="grid-2">
-            <div>
-              <div
-                style="
-                  display: flex;
-                  justify-content: space-between;
-                  align-items: center;
-                  margin-bottom: 10px;
-                  gap: 8px;
-                  flex-wrap: wrap;
-                "
-              >
-                <strong class="safe-text"
-                  >各项支出项金额分布与对比上期（点击某一项查看订单穿透）</strong
+                <div class="canvas-wrap" style="height: 175px">
+                  <canvas id="expenseChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 模块 02：SKU 销量趋势与音广归因 -->
+          <article
+            style="--accent-rgb: 96, 165, 250"
+            class="glass-surface spotlight-card dash-section"
+            id="module02"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div class="section-head" style="position: relative; z-index: 3">
+              <div>
+                <span class="section-tag"
+                  >MODULE 02 · SKU 销量与商品视频关联</span
                 >
+                <h2 class="section-title">SKU 销量对比与商品关联证据</h2>
+                <p class="section-desc">
+                  已支付非取消订单的商品件数，未扣售后退货。商品视频关联不等于
+                  SKU 转化归因，点击行查看订单。
+                </p>
+              </div>
+              <div class="seg-bar neu-well" id="skuFilterGroup">
+                <button type="button" class="seg-item" data-sku-filter="all">
+                  全部 SKU
+                </button>
+                <button type="button" class="seg-item" data-sku-filter="up">
+                  销量上升
+                </button>
+                <button type="button" class="seg-item" data-sku-filter="down">
+                  销量下降
+                </button>
+              </div>
+            </div>
+
+            <div class="table-wrap" style="position: relative; z-index: 3">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SKU / 商品名称</th>
+                    <th>本周期销量</th>
+                    <th>上周期销量</th>
+                    <th>变化幅度</th>
+                    <th>视频数据联动</th>
+                    <th>广告数据联动</th>
+                    <th>证据与限制</th>
+                  </tr>
+                </thead>
+                <tbody id="skuTableBody"></tbody>
+              </table>
+            </div>
+
+            <div
+              class="diag-box"
+              id="skuDiagBox"
+              style="position: relative; z-index: 3"
+            >
+              选择 SKU 查看实际销量与证据。
+            </div>
+          </article>
+
+          <!-- 其余维度分区（默认折叠控制，保持清爽呼吸感） -->
+          <article
+            style="--accent-rgb: 129, 140, 248"
+            class="glass-surface spotlight-card dash-section"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div
+              class="section-head"
+              style="
+                position: relative;
+                z-index: 3;
+                margin-bottom: 0;
+                padding-bottom: 0;
+                border-bottom: none;
+              "
+            >
+              <div>
+                <span class="section-tag"
+                  >EXTENDED DIMENSIONS · 地域 / 签收 / 时段 / 渠道 / 达人</span
+                >
+                <h2 class="section-title">更多订单维度与达人双佣金明细</h2>
+                <p class="section-desc">
+                  包含订单来源地区、订单状态与平台取消原因、24
+                  小时下单时段、下单渠道及达人销量/标准佣金/广告佣金排行
+                </p>
+              </div>
+              <button type="button" id="toggleExtendedBtn" class="collapse-btn">
+                展开维度明细
+              </button>
+            </div>
+
+            <div
+              id="extendedDimensionsPanel"
+              class="hidden"
+              style="
+                position: relative;
+                z-index: 3;
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+                padding-top: 8px;
+              "
+            >
+              <div class="grid-2col">
+                <div class="sub-panel">
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 10px;
+                    "
+                  >
+                    <strong style="font-size: 13.5px"
+                      >模块 01 · 订单来源地区分布</strong
+                    >
+                    <span class="badge-pill mono" id="regionTotalBadge"
+                      >-- 单</span
+                    >
+                  </div>
+                  <div class="canvas-wrap">
+                    <canvas id="regionChart"></canvas>
+                  </div>
+                </div>
+
+                <div class="sub-panel">
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 10px;
+                    "
+                  >
+                    <strong style="font-size: 13.5px"
+                      >模块 03 · 订单状态与平台取消原因</strong
+                    >
+                    <span class="badge-pill badge-warn mono" id="unsignedBadge"
+                      >已取消 -- 单</span
+                    >
+                  </div>
+                  <div
+                    class="grid-2col"
+                    style="
+                      grid-template-columns: repeat(
+                        auto-fit,
+                        minmax(180px, 1fr)
+                      );
+                      gap: 12px;
+                    "
+                  >
+                    <div class="canvas-wrap" style="height: 195px">
+                      <canvas id="orderStatusChart"></canvas>
+                    </div>
+                    <div class="canvas-wrap" style="height: 195px">
+                      <canvas id="unsignedReasonChart"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid-2col">
+                <div class="sub-panel">
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 10px;
+                    "
+                  >
+                    <strong style="font-size: 13.5px"
+                      >模块 05 · 24 小时下单时段分布</strong
+                    >
+                    <span class="badge-pill mono" id="peakHourBadge"
+                      >峰值 --:00</span
+                    >
+                  </div>
+                  <div class="canvas-wrap">
+                    <canvas id="hourChart"></canvas>
+                  </div>
+                </div>
+
+                <div class="sub-panel">
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 10px;
+                    "
+                  >
+                    <strong style="font-size: 13.5px"
+                      >模块 06 · 视频 / 直播 / 商品卡归因 GMV</strong
+                    >
+                    <span class="badge-pill mono" id="channelTopBadge"
+                      >主阵地 --</span
+                    >
+                  </div>
+                  <div class="canvas-wrap">
+                    <canvas id="channelChart"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sub-panel">
+                <div
+                  style="
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 10px;
+                    margin-bottom: 12px;
+                  "
+                >
+                  <strong style="font-size: 14px"
+                    >模块 07 · 联盟达人订单与实际 / 预估佣金</strong
+                  >
+                  <div class="seg-bar neu-well" id="creatorSortGroup">
+                    <button type="button" class="seg-item" data-sort="orders">
+                      按销量排序
+                    </button>
+                    <button type="button" class="seg-item" data-sort="stdComm">
+                      按标准佣金
+                    </button>
+                    <button type="button" class="seg-item" data-sort="adComm">
+                      按广告佣金
+                    </button>
+                  </div>
+                </div>
+                <div
+                  class="grid-3col"
+                  id="creatorSplitCards"
+                  style="margin-bottom: 14px"
+                ></div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>排名</th>
+                        <th>达人账号</th>
+                        <th>联盟订单 / 件数</th>
+                        <th>已知实际佣金基数</th>
+                        <th>标准佣金</th>
+                        <th>广告佣金</th>
+                        <th>佣金合计</th>
+                      </tr>
+                    </thead>
+                    <tbody id="creatorTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- AI 数据解读问答分区（默认折叠控制） -->
+          <article
+            style="--accent-rgb: 45, 212, 191"
+            class="glass-surface spotlight-card dash-section"
+          >
+            <div class="flowing-border"></div>
+            <div class="dispersion-rim"></div>
+            <div
+              class="section-head"
+              style="
+                position: relative;
+                z-index: 3;
+                margin-bottom: 0;
+                padding-bottom: 0;
+                border-bottom: none;
+              "
+            >
+              <div>
                 <span
-                  class="mono"
-                  style="font-size: 12px; color: var(--text-muted)"
-                  id="totalExpenseSumLabel"
-                  >支出合计：--</span
+                  class="section-tag"
+                  style="
+                    color: #5eead4;
+                    background: rgba(45, 212, 191, 0.12);
+                    border-color: rgba(45, 212, 191, 0.28);
+                  "
+                  >AI INSIGHTS · 指标追问</span
                 >
+                <h2 class="section-title">AI 关键信号摘要与数据追问</h2>
+                <p class="section-desc">
+                  按需展开与当前看板上下文绑定的指标解读问答
+                </p>
               </div>
-              <div class="expense-list" id="expenseList"></div>
+              <button type="button" id="toggleAiPanelBtn" class="collapse-btn">
+                展开 AI 问答
+              </button>
             </div>
 
-            <div class="inspector-box" id="expenseInspector">
+            <div
+              id="aiQaPanel"
+              class="hidden"
+              style="
+                position: relative;
+                z-index: 3;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                padding-top: 8px;
+              "
+            >
+              <div id="aiContextBadge" class="badge-pill"></div>
+              <div id="aiInsightsGrid" class="grid-3col"></div>
+              <button id="clearAiChatBtn" class="mini-btn" type="button">
+                清空当前解读
+              </button>
               <div
-                style="
-                  display: flex;
-                  justify-content: space-between;
-                  align-items: flex-start;
-                  gap: 8px;
-                "
+                style="display: flex; flex-wrap: wrap; gap: 8px"
+                id="aiQuickPrompts"
               >
-                <div class="safe-text">
-                  <span class="module-tag" style="margin-bottom: 4px"
-                    >支出项订单穿透详情</span
-                  >
-                  <h3 style="font-size: 16px; font-weight: 700" id="inspTitle">
-                    --
-                  </h3>
-                  <p
-                    style="font-size: 12px; color: var(--text-secondary)"
-                    id="inspSub"
-                  >
-                    --
-                  </p>
-                </div>
-                <span class="pill-badge mono" id="inspMomBadge">变化 --</span>
+                <button
+                  type="button"
+                  class="mini-btn"
+                  data-q="为什么会有负回款订单，优先排查哪几类原因？"
+                >
+                  负回款原因
+                </button>
+                <button
+                  type="button"
+                  class="mini-btn"
+                  data-q="当前各项支出里哪几项占营收比例或环比变化最值得关注？"
+                >
+                  支出与环比
+                </button>
+                <button
+                  type="button"
+                  class="mini-btn"
+                  data-q="销量上升和销量下降的 SKU 主要受视频还是广告影响？"
+                >
+                  SKU 涨跌与证据
+                </button>
+                <button
+                  type="button"
+                  class="mini-btn"
+                  data-q="达人佣金支出和达人带货单量表现如何？"
+                >
+                  达人双佣金
+                </button>
               </div>
-
-              <div class="inspector-grid">
-                <div class="inspector-metric">
-                  <div class="inspector-metric-title">费用净额非零订单</div>
-                  <div class="inspector-metric-val mono" id="inspHasCount">
-                    --
-                  </div>
-                  <div class="inspector-metric-note" id="inspHasRate">
-                    占已结算订单 --
-                  </div>
-                </div>
-                <div class="inspector-metric">
-                  <div class="inspector-metric-title">
-                    支出金额占「有该支出订单」比例
-                  </div>
-                  <div class="inspector-metric-val mono" id="inspShareRatio">
-                    --
-                  </div>
-                  <div class="inspector-metric-note" id="inspShareFormula">
-                    该支出总额 ÷ 有该支出订单营收基准
-                  </div>
-                </div>
-                <div class="inspector-metric">
-                  <div class="inspector-metric-title">费用净额明确零订单</div>
-                  <div class="inspector-metric-val mono" id="inspNoCount">
-                    --
-                  </div>
-                  <div class="inspector-metric-note" id="inspNoNote">
-                    当前周期内未发生该项扣减
-                  </div>
-                </div>
-              </div>
-
-              <div class="chart-box" style="height: 190px">
-                <canvas id="expenseChart"></canvas>
-              </div>
-
-              <div class="note-foot">
-                费用保留平台原始正负号；正数可能为补贴或退费。仅统计明确返回该字段的订单，未知不计入“无费用”。点击数量查看订单明细。
-              </div>
+              <div id="aiChatLog" class="ai-chat-log"></div>
+              <form id="aiChatForm" style="display: flex; gap: 8px">
+                <input
+                  id="aiChatInput"
+                  type="text"
+                  class="capsule-input neu-well"
+                  style="height: 40px; border-radius: 10px; padding: 0 12px"
+                  placeholder="输入你想了解的指标问题..."
+                  autocomplete="off"
+                />
+                <button type="submit" class="apply-btn">提问</button>
+              </form>
             </div>
-          </div>
-        </article>
+          </article>
+        </div>
 
-        <!-- Module 02: SKU Sales Trend + Video & Ad Attribution -->
-        <article class="card" id="module02">
-          <div class="card-header">
-            <div class="safe-text">
-              <span class="module-tag">MODULE 02 · SKU 销量与商品视频关联</span>
-              <h2 class="card-title">SKU 销量对比与商品关联证据</h2>
-              <p class="card-desc">
-                已支付非取消订单的商品件数，未扣售后退货；商品视频关联不等于SKU转化归因。点击行查看订单。
+        <!-- 多站点横向对比视图 -->
+        <div
+          id="compareView"
+          class="glass-surface spotlight-card dash-section hidden"
+          style="--accent-rgb: 96, 165, 250"
+        >
+          <div class="flowing-border"></div>
+          <div class="dispersion-rim"></div>
+          <div class="section-head" style="position: relative; z-index: 3">
+            <div>
+              <span class="section-tag"
+                >CROSS-SITE MATRIX · 多站点横向对比</span
+              >
+              <h2 class="section-title">已授权店铺结算与佣金横向对比</h2>
+              <p class="section-desc">
+                按每家店铺原币展示，不直接相加不同币种；结算按 UTC
+                账单日期，订单按当地创建日期。
               </p>
             </div>
-            <div class="seg-group" id="skuFilterGroup">
-              <button
-                type="button"
-                class="seg-btn active"
-                data-sku-filter="all"
-              >
-                全部 SKU
-              </button>
-              <button type="button" class="seg-btn" data-sku-filter="up">
-                销量上升
-              </button>
-              <button type="button" class="seg-btn" data-sku-filter="down">
-                销量下降
-              </button>
-            </div>
           </div>
 
-          <div class="table-wrap">
+          <div class="table-wrap" style="position: relative; z-index: 3">
             <table>
               <thead>
                 <tr>
-                  <th>SKU / 商品名称</th>
-                  <th>本周期销量</th>
-                  <th>上周期销量</th>
-                  <th>变化幅度</th>
-                  <th>视频数据联动</th>
-                  <th>广告数据联动</th>
-                  <th>证据与限制</th>
+                  <th>站点</th>
+                  <th>币种</th>
+                  <th>已结算订单数</th>
+                  <th>总结算金额</th>
+                  <th>环比变化</th>
+                  <th>取消率</th>
+                  <th>达人标准佣金</th>
+                  <th>达人广告佣金</th>
                 </tr>
               </thead>
-              <tbody id="skuTableBody"></tbody>
+              <tbody id="compareTableBody"></tbody>
             </table>
-          </div>
-
-          <div class="diag-banner safe-text" id="skuDiagBox">
-            选择SKU查看实际销量与证据。
-          </div>
-        </article>
-
-        <!-- Module 01 & Module 03 -->
-        <div class="grid-2">
-          <article class="card" id="module01">
-            <div class="card-header">
-              <div class="safe-text">
-                <span class="module-tag">MODULE 01 · 订单地域分布</span>
-                <h3 class="card-title">订单来源地区分布及数量</h3>
-                <p class="card-desc">
-                  按核心省份/州统计订单量及占比，辅助区域备货与物流时效评估
-                </p>
-              </div>
-              <span class="pill-badge mono" id="regionTotalBadge"
-                >总计 -- 单</span
-              >
-            </div>
-            <div class="chart-box">
-              <canvas id="regionChart"></canvas>
-            </div>
-          </article>
-
-          <article class="card" id="module03">
-            <div class="card-header">
-              <div class="safe-text">
-                <span class="module-tag">MODULE 03 · 订单状态与取消原因</span>
-                <h3 class="card-title">订单状态分布与平台返回的取消原因</h3>
-                <p class="card-desc">
-                  在途、待发和已取消分别统计；没有物流异常与售后明细时不推测拒收、丢件原因。
-                </p>
-              </div>
-              <span class="pill-badge pill-warn mono" id="unsignedBadge"
-                >未签收 -- 单</span
-              >
-            </div>
-            <div
-              class="grid-2"
-              style="
-                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                gap: 12px;
-              "
-            >
-              <div class="chart-box" style="height: 210px">
-                <canvas id="orderStatusChart"></canvas>
-              </div>
-              <div class="chart-box" style="height: 210px">
-                <canvas id="unsignedReasonChart"></canvas>
-              </div>
-            </div>
-          </article>
-        </div>
-
-        <!-- Module 05 & Module 06 -->
-        <div class="grid-2">
-          <article class="card" id="module05">
-            <div class="card-header">
-              <div class="safe-text">
-                <span class="module-tag">MODULE 05 · 下单时间分布</span>
-                <h3 class="card-title">24 小时下单时段分布（站点当地时间）</h3>
-                <p class="card-desc">
-                  按店铺时区统计创建时间；展示真实分布，不预设高峰或因果。
-                </p>
-              </div>
-              <span class="pill-badge mono" id="peakHourBadge"
-                >峰值时段 --</span
-              >
-            </div>
-            <div class="chart-box">
-              <canvas id="hourChart"></canvas>
-            </div>
-          </article>
-
-          <article class="card" id="module06">
-            <div class="card-header">
-              <div class="safe-text">
-                <span class="module-tag">MODULE 06 · 平台渠道归因 GMV</span>
-                <h3 class="card-title">视频 / 直播 / 商品卡归因 GMV</h3>
-                <p class="card-desc">
-                  平台按支付期统计，包含取消和退款；渠道可能归因重叠，不当作订单数量。
-                </p>
-              </div>
-              <span class="pill-badge mono" id="channelTopBadge"
-                >主阵地 --</span
-              >
-            </div>
-            <div class="chart-box">
-              <canvas id="channelChart"></canvas>
-            </div>
-          </article>
-        </div>
-
-        <!-- Module 07: Creator vs Non-Creator & Dual Commission -->
-        <article class="card" id="module07">
-          <div class="card-header">
-            <div class="safe-text">
-              <span class="module-tag">MODULE 07 · 联盟订单与双佣金核算</span>
-              <h3 class="card-title">联盟达人订单、实际佣金与预估佣金</h3>
-              <p class="card-desc">
-                未匹配联盟订单保留“未分类”，不会直接视为自营；实际佣金仅统计SETTLED且明确返回的金额。
-              </p>
-            </div>
-            <div class="seg-group" id="creatorSortGroup">
-              <button type="button" class="seg-btn active" data-sort="orders">
-                按销量排序
-              </button>
-              <button type="button" class="seg-btn" data-sort="stdComm">
-                按标准佣金排序
-              </button>
-              <button type="button" class="seg-btn" data-sort="adComm">
-                按广告佣金排序
-              </button>
-            </div>
           </div>
 
           <div
-            class="grid-3"
-            style="margin-bottom: 14px"
-            id="creatorSplitCards"
-          ></div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>排名</th>
-                  <th>达人账号 / 类型</th>
-                  <th>联盟订单 / 件数</th>
-                  <th>已知实际佣金基数</th>
-                  <th>标准佣金</th>
-                  <th>广告佣金</th>
-                  <th>佣金合计</th>
-                </tr>
-              </thead>
-              <tbody id="creatorTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <!-- View Mode 2: Multi-Site / Multi-Store Horizontal Comparison -->
-      <section id="compareView" class="card hidden">
-        <div class="card-header">
-          <div class="safe-text">
-            <span class="module-tag"
-              >CROSS-SITE &amp; CROSS-STORE MATRIX · 横向对比</span
-            >
-            <h2 class="card-title">
-              不同站点与不同店铺核心订单、结算与达人佣金横向对比
-            </h2>
-            <p class="card-desc">
-              每家店铺保留原币与数据完整性；跨币种金额不求和。结算按UTC账单日期，取消率按当地订单创建日期。
-            </p>
+            class="canvas-wrap"
+            style="height: 250px; position: relative; z-index: 3"
+          >
+            <canvas id="compareChart"></canvas>
           </div>
         </div>
 
-        <div class="table-wrap" style="margin-bottom: 16px">
-          <table>
-            <thead>
-              <tr>
-                <th>站点 / 店铺</th>
-                <th>币种</th>
-                <th>已结算订单数</th>
-                <th>总结算金额</th>
-                <th>环比变化</th>
-                <th>取消率</th>
-                <th>达人标准佣金</th>
-                <th>达人广告佣金</th>
-              </tr>
-            </thead>
-            <tbody id="compareTableBody"></tbody>
-          </table>
-        </div>
-
-        <div class="chart-box" style="height: 290px">
-          <canvas id="compareChart"></canvas>
+        <!-- 舒适 / 紧凑切换 -->
+        <div style="display: flex; justify-content: flex-end">
+          <div class="seg-bar neu-well">
+            <button type="button" id="densityComfortable" class="seg-item">
+              舒适间距
+            </button>
+            <button type="button" id="densityCompact" class="seg-item">
+              紧凑间距
+            </button>
+          </div>
         </div>
       </section>
-    </main>
 
-    <div class="density-fab" aria-label="布局密度切换">
-      <button type="button" class="density-btn active" id="densityComfortable">
-        舒适
-      </button>
-      <button type="button" class="density-btn" id="densityCompact">
-        紧凑
-      </button>
+      <!-- ================= 底部胶囊输入框 ================= -->
+      <footer class="command-footer">
+        <form id="commandForm" class="command-form">
+          <div class="capsule-box neu-well">
+            <input
+              id="commandInput"
+              type="text"
+              class="capsule-input"
+              placeholder="请输入您的指令或问题..."
+              autocomplete="off"
+            />
+            <div class="send-wrap">
+              <div
+                id="gooDropletStage"
+                class="gooey-stage hidden"
+                style="
+                  position: absolute;
+                  inset: 0;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  pointer-events: none;
+                "
+              >
+                <span
+                  style="
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 999px;
+                    background: rgba(255, 255, 255, 0.22);
+                    display: inline-block;
+                  "
+                ></span>
+                <span
+                  class="goo-droplet"
+                  style="
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 999px;
+                    background: rgba(45, 212, 191, 0.35);
+                    margin-left: -10px;
+                    display: inline-block;
+                  "
+                ></span>
+              </div>
+              <button
+                type="submit"
+                id="sendCommandBtn"
+                class="send-btn neu-btn magnetic"
+                data-strength="0.35"
+                aria-label="发送指令"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </form>
+      </footer>
     </div>
+
+    <!-- 毛玻璃对话浮层 -->
+    <dialog id="chatModal" class="chat-modal" aria-label="Agent 对话窗口">
+      <div class="glass-surface chat-dialog" style="--accent-rgb: 96, 165, 250">
+        <div class="flowing-border" style="opacity: 0.65"></div>
+        <div class="chat-head" style="position: relative; z-index: 3">
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span
+              id="modalAgentDot"
+              style="
+                width: 9px;
+                height: 9px;
+                border-radius: 999px;
+                background: #f8fafc;
+              "
+            ></span>
+            <div>
+              <div
+                id="modalAgentTitle"
+                style="font-size: 15px; font-weight: 700"
+              >
+                Leader Agent
+              </div>
+              <div id="modalAgentRole" style="font-size: 12px; color: #9ca3af">
+                任务规划与协作
+              </div>
+            </div>
+          </div>
+          <button id="closeHubChatBtn" type="button" class="collapse-btn">
+            关闭
+          </button>
+        </div>
+        <div
+          id="modalChatStatus"
+          role="status"
+          aria-live="polite"
+          class="source-note"
+        ></div>
+        <div
+          id="modalChatLog"
+          class="chat-body"
+          style="position: relative; z-index: 3"
+        ></div>
+        <form
+          id="modalChatForm"
+          style="
+            position: relative;
+            z-index: 3;
+            padding: 14px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            gap: 8px;
+          "
+        >
+          <input
+            id="modalChatInput"
+            type="text"
+            class="capsule-input neu-well"
+            style="height: 40px; border-radius: 10px; padding: 0 12px"
+            placeholder="继续与当前 Agent 对话..."
+            autocomplete="off"
+          />
+          <button type="submit" class="apply-btn">发送</button>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="historyDialog" class="detail-dialog">
+      <div class="dialog-head">
+        <h2>会话记录</h2>
+        <button id="closeHistoryBtn" class="collapse-btn">关闭</button>
+      </div>
+      <button id="newHubChatBtn" class="apply-btn">新建会话</button>
+      <div id="historyList"></div>
+    </dialog>
+    <div id="toastBox" class="toast" role="status" aria-live="polite"></div>
 
     <dialog id="detailDialog" class="detail-dialog">
       <div class="card-header">

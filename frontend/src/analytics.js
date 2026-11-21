@@ -1,4 +1,8 @@
 import Chart from "chart.js/auto";
+import "./abrain.css";
+import { initializeHub } from "./hub.js";
+Chart.defaults.color = "#aeb7c7";
+Chart.defaults.borderColor = "rgba(255,255,255,.09)";
 const $ = (id) => document.getElementById(id);
 const esc = (v) =>
   String(v ?? "—").replace(
@@ -135,15 +139,15 @@ function chart(id, type, rows, label, opts = {}) {
           backgroundColor:
             type === "doughnut"
               ? [
-                  "#0d9488",
+                  "#2dd4bf",
                   "#2563eb",
                   "#f59e0b",
                   "#e11d48",
                   "#64748b",
                   "#94a3b8",
                 ]
-              : "#0f766e",
-          borderColor: "#0f766e",
+              : "#2dd4bf",
+          borderColor: "#2dd4bf",
           borderWidth: type === "line" ? 2 : 0,
           borderRadius: 5,
           tension: 0.25,
@@ -924,6 +928,11 @@ $("exportCsvBtn").onclick = async () => {
     status(e.message, true);
   }
 };
+initializeHub({
+  json,
+  resizeCharts: () => Object.values(charts).forEach((chart) => chart.resize()),
+});
+
 // Refresh cached snapshots without silently issuing third-party calls.
 setInterval(async () => {
   if (document.hidden || (job && ["queued", "running"].includes(job.status)))
