@@ -172,6 +172,10 @@ function App() {
     [shop, token],
   );
   function navigate(next: string, runId?: string) {
+    if (next === "overview") {
+      location.assign("/analytics.html");
+      return;
+    }
     setView(next);
     if (dataViews.includes(next)) setMode("data");
     else if (next === "chat" || next === "operations") setMode("assistant");
@@ -1143,4 +1147,8 @@ function Connections({ api, onAds }: { api: Api; onAds: () => void }) {
     </article>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+if (new URLSearchParams(location.search).get("view") === "overview") {
+  location.replace("/analytics.html");
+} else {
+  createRoot(document.getElementById("root")!).render(<App />);
+}

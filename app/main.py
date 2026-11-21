@@ -356,6 +356,9 @@ from app.business_routes import router as business_router
 app.include_router(operation_router(scope))
 app.include_router(business_router(scope))
 
+from app.analytics_routes import router as analytics_router
+app.include_router(analytics_router(scope))
+
 # A production build can be served by the same local API process.
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles

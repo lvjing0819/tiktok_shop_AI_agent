@@ -1,0 +1,2443 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TikTok Shop · 经营数据看板</title>
+    <style>
+      :root {
+        --bg-page: #f8fafc;
+        --bg-card: #ffffff;
+        --bg-subtle: #f1f5f9;
+        --text-primary: #0f172a;
+        --text-secondary: #475569;
+        --text-muted: #94a3b8;
+        --border-light: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --accent-dark: #0f172a;
+        --accent-teal: #0d9488;
+        --accent-teal-soft: #f0fdfa;
+        --accent-blue: #2563eb;
+        --accent-blue-soft: #eff6ff;
+        --positive: #059669;
+        --positive-soft: #ecfdf5;
+        --negative: #dc2626;
+        --negative-soft: #fef2f2;
+        --warning: #d97706;
+        --warning-soft: #fffbeb;
+        --radius-card: 12px;
+        --radius-pill: 8px;
+        --pad-card: 20px;
+        --gap-grid: 16px;
+      }
+
+      body.density-compact {
+        --pad-card: 14px;
+        --gap-grid: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        background-color: var(--bg-page);
+        color: var(--text-primary);
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+
+      .mono {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .grid-auto,
+      .grid-2,
+      .grid-3,
+      .grid-4,
+      .flex-row,
+      .card,
+      .panel-box {
+        min-width: 0;
+      }
+
+      .safe-text {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      /* Top Bar */
+      .topbar {
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border-light);
+        position: sticky;
+        top: 0;
+        z-index: 30;
+      }
+
+      .topbar-inner {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 12px 24px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .brand-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .brand-badge {
+        background: var(--accent-dark);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 12px;
+        padding: 5px 10px;
+        border-radius: 7px;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+
+      .brand-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+        white-space: nowrap;
+      }
+
+      .brand-sub {
+        font-size: 12px;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        position: relative;
+      }
+
+      .control-select {
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        color: var(--text-primary);
+        border-radius: var(--radius-pill);
+        padding: 6px 12px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        outline: none;
+      }
+
+      .control-select:hover {
+        border-color: var(--border-strong);
+      }
+
+      /* Date & Compare Strip */
+      .date-strip-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        background: #ffffff;
+        border: 1px solid var(--border-light);
+        border-radius: 8px;
+        padding: 4px 10px;
+        gap: 8px;
+        font-size: 13px;
+      }
+
+      .date-strip-wrap:focus-within {
+        border-color: var(--accent-teal);
+      }
+
+      .date-input-inline {
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 13px;
+        font-weight: 500;
+        width: 96px;
+        outline: none;
+        text-align: center;
+        cursor: pointer;
+      }
+
+      .date-sep {
+        color: var(--text-muted);
+        font-size: 12px;
+        user-select: none;
+      }
+
+      .compare-v-divider {
+        width: 1px;
+        height: 16px;
+        background: var(--border-light);
+        margin: 0 2px;
+      }
+
+      .compare-label {
+        color: var(--text-muted);
+        font-size: 12px;
+        user-select: none;
+      }
+
+      .compare-range-text {
+        color: var(--text-primary);
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+
+      .strip-icon-btn {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        padding: 3px 5px;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+      }
+
+      .strip-icon-btn:hover {
+        background: var(--bg-subtle);
+        color: var(--accent-teal);
+      }
+
+      /* Popover Date Range Picker */
+      .date-popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: 680px;
+        max-width: calc(100vw - 32px);
+        background: #ffffff;
+        border: 1px solid var(--border-light);
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+        display: flex;
+        overflow: hidden;
+        z-index: 60;
+      }
+
+      .date-popover.hidden {
+        display: none;
+      }
+
+      .date-presets {
+        width: 148px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--border-light);
+        padding: 14px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: #ffffff;
+      }
+
+      .preset-btn {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border-light);
+        background: #ffffff;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.15s ease;
+      }
+
+      .preset-btn:hover {
+        border-color: var(--accent-teal);
+        color: var(--accent-teal);
+      }
+
+      .preset-btn.active {
+        border-color: var(--accent-teal);
+        color: var(--accent-teal);
+        font-weight: 600;
+        background: #ffffff;
+      }
+
+      .date-calendar-pane {
+        flex: 1;
+        min-width: 0;
+        padding: 14px 18px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .custom-tab-bar {
+        display: flex;
+        justify-content: center;
+      }
+
+      .custom-tab-pill {
+        border: 1px solid var(--accent-teal);
+        color: var(--accent-teal);
+        background: #ffffff;
+        border-radius: 6px;
+        padding: 5px 18px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .dual-calendars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
+      }
+
+      .cal-month-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .cal-nav-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .cal-nav-btn {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 13px;
+        cursor: pointer;
+        padding: 2px 5px;
+        border-radius: 4px;
+      }
+
+      .cal-nav-btn:hover {
+        background: var(--bg-subtle);
+        color: var(--text-primary);
+      }
+
+      .cal-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        text-align: center;
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+      }
+
+      .cal-days-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 2px;
+        text-align: center;
+      }
+
+      .cal-day {
+        height: 30px;
+        line-height: 30px;
+        font-size: 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--text-primary);
+        position: relative;
+        user-select: none;
+      }
+
+      .cal-day:hover:not(.muted) {
+        background: var(--bg-subtle);
+      }
+
+      .cal-day.muted {
+        color: #cbd5e1;
+        background: #f8fafc;
+        cursor: default;
+      }
+
+      .cal-day.in-range {
+        background: #e6fffa;
+        color: #0f766e;
+        border-radius: 0;
+      }
+
+      .cal-day.range-start {
+        background: var(--accent-teal);
+        color: #ffffff;
+        font-weight: 700;
+        border-radius: 6px 0 0 6px;
+      }
+
+      .cal-day.range-end {
+        background: var(--accent-teal);
+        color: #ffffff;
+        font-weight: 700;
+        border-radius: 0 6px 6px 0;
+      }
+
+      .cal-day.range-start.range-end {
+        border-radius: 6px;
+      }
+
+      .cal-day.today-dot::after {
+        content: "";
+        position: absolute;
+        bottom: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .date-popover-footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-top: 1px solid var(--border-light);
+        padding-top: 10px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .apply-range-btn {
+        background: var(--accent-teal);
+        color: #ffffff;
+        border: none;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .seg-group {
+        display: inline-flex;
+        background: var(--bg-subtle);
+        padding: 3px;
+        border-radius: var(--radius-pill);
+        border: 1px solid var(--border-light);
+      }
+
+      .seg-btn {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        padding: 5px 11px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+      }
+
+      .seg-btn.active {
+        background: var(--bg-card);
+        color: var(--text-primary);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      }
+
+      /* Main Container */
+      .main-container {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 20px 24px 56px;
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap-grid);
+      }
+
+      .card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-card);
+        padding: var(--pad-card);
+      }
+
+      .card-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .header-badges {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .module-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: var(--accent-blue);
+        background: var(--accent-blue-soft);
+        padding: 2px 8px;
+        border-radius: 5px;
+        margin-bottom: 6px;
+      }
+
+      .card-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .card-desc {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 2px;
+      }
+
+      .pill-badge {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--bg-subtle);
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+
+      .pill-pos {
+        background: var(--positive-soft);
+        color: var(--positive);
+      }
+
+      .pill-neg {
+        background: var(--negative-soft);
+        color: var(--negative);
+      }
+
+      .pill-warn {
+        background: var(--warning-soft);
+        color: var(--warning);
+      }
+
+      .grid-4 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: var(--gap-grid);
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: var(--gap-grid);
+      }
+
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px;
+      }
+
+      /* Top KPI Cards */
+      .kpi-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-card);
+        padding: 18px 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .kpi-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+
+      .kpi-icon-box {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: var(--bg-subtle);
+        color: var(--text-secondary);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+
+      .kpi-value-row {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .kpi-main-num {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text-primary);
+        line-height: 1.15;
+      }
+
+      .kpi-sub-inline {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .kpi-bottom-text {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      /* Module 04 Payout Split Cards */
+      .payout-left-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .payout-status-card {
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+        padding: 14px 16px;
+        background: #ffffff;
+      }
+
+      .payout-status-card.normal {
+        border-color: #bbf7d0;
+        background: #f8fefa;
+      }
+
+      .payout-status-card.pending {
+        border-color: #fde68a;
+        background: #fffdf7;
+      }
+
+      .payout-status-card.negative {
+        border-color: #fecaca;
+        background: #fff9f9;
+      }
+
+      .payout-card-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .payout-card-body {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .payout-count-num {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .payout-amt-box {
+        text-align: right;
+      }
+
+      .payout-amt-label {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .payout-amt-val {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .payout-card-foot {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 6px;
+      }
+
+      .reason-panel {
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+        padding: 16px;
+        background: #ffffff;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .reason-row {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--bg-subtle);
+      }
+
+      .reason-row:last-child {
+        border-bottom: none;
+      }
+
+      .reason-row-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .reason-tag {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 4px;
+      }
+
+      .tag-unpaid {
+        background: var(--warning-soft);
+        color: var(--warning);
+      }
+
+      .tag-neg {
+        background: var(--negative-soft);
+        color: var(--negative);
+      }
+
+      .reason-bar-track {
+        width: 100%;
+        height: 5px;
+        background: var(--bg-subtle);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .reason-bar-fill {
+        height: 100%;
+        border-radius: 999px;
+      }
+
+      .recon-stat-card {
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+        padding: 14px 16px;
+        background: var(--bg-page);
+      }
+
+      .recon-stat-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+      }
+
+      .recon-stat-main {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .recon-stat-sub {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
+
+      .expense-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .expense-item {
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+        padding: 11px 14px;
+        background: var(--bg-card);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .expense-item:hover {
+        border-color: var(--accent-blue);
+        background: #fafcff;
+      }
+
+      .expense-item.active {
+        border-color: var(--accent-dark);
+        background: var(--bg-subtle);
+      }
+
+      .expense-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .expense-name {
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text-primary);
+      }
+
+      .expense-field {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-left: 6px;
+      }
+
+      .expense-amounts {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .expense-bar-track {
+        width: 100%;
+        height: 6px;
+        background: var(--bg-subtle);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .expense-bar-fill {
+        height: 100%;
+        background: var(--accent-dark);
+        border-radius: 999px;
+      }
+
+      .expense-meta-mini {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .inspector-box {
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        padding: 16px;
+        background: var(--bg-page);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .inspector-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+      }
+
+      .inspector-metric {
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .inspector-metric-title {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 4px;
+      }
+
+      .inspector-metric-val {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .inspector-metric-note {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+
+      .table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 13px;
+      }
+
+      th {
+        background: var(--bg-subtle);
+        color: var(--text-secondary);
+        font-weight: 600;
+        font-size: 12px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-light);
+        white-space: nowrap;
+      }
+
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-light);
+        color: var(--text-primary);
+        vertical-align: middle;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      tbody tr.clickable-row {
+        cursor: pointer;
+        transition: background 0.12s ease;
+      }
+
+      tbody tr.clickable-row:hover {
+        background: var(--bg-subtle);
+      }
+
+      tbody tr.selected-row {
+        background: var(--accent-blue-soft);
+      }
+
+      .chart-box {
+        position: relative;
+        height: 250px;
+        width: 100%;
+      }
+
+      .diag-banner {
+        background: var(--bg-subtle);
+        border-left: 3px solid var(--accent-dark);
+        padding: 12px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--text-primary);
+        margin-top: 12px;
+      }
+
+      .note-foot {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 10px;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .density-fab {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 40;
+        background: var(--bg-card);
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        padding: 4px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .density-btn {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+
+      .density-btn.active {
+        background: var(--accent-dark);
+        color: #ffffff;
+      }
+
+      /* AI Data Insights & Interactive Q&A Module */
+      .ai-insight-card {
+        border: 1px solid #cbd5e1;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      }
+
+      .ai-header-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: #0f766e;
+        background: #f0fdfa;
+        border: 1px solid #99f6e4;
+        padding: 3px 9px;
+        border-radius: 999px;
+        margin-bottom: 6px;
+      }
+
+      .ai-insights-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .ai-insight-item {
+        border: 1px solid var(--border-light);
+        background: var(--bg-card);
+        border-radius: 10px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 10px;
+        transition:
+          border-color 0.15s ease,
+          transform 0.15s ease;
+      }
+
+      .ai-insight-item:hover {
+        border-color: var(--accent-teal);
+      }
+
+      .ai-insight-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .ai-severity {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+
+      .ai-sev-high {
+        background: var(--negative-soft);
+        color: var(--negative);
+      }
+
+      .ai-sev-warn {
+        background: var(--warning-soft);
+        color: var(--warning);
+      }
+
+      .ai-sev-good {
+        background: var(--positive-soft);
+        color: var(--positive);
+      }
+
+      .ai-insight-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .ai-insight-body {
+        font-size: 12px;
+        color: var(--text-secondary);
+        line-height: 1.55;
+      }
+
+      .ai-insight-action {
+        align-self: flex-start;
+        border: 1px solid var(--border-light);
+        background: var(--bg-subtle);
+        color: var(--text-primary);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .ai-insight-action:hover {
+        border-color: var(--accent-teal);
+        color: var(--accent-teal);
+        background: #ffffff;
+      }
+
+      .ai-chat-panel {
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+        background: var(--bg-card);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ai-chat-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .ai-quick-prompts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .ai-chip-btn {
+        border: 1px solid var(--border-light);
+        background: var(--bg-page);
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 5px 11px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .ai-chip-btn:hover {
+        border-color: var(--accent-teal);
+        color: var(--accent-teal);
+        background: #f0fdfa;
+      }
+
+      .ai-chat-log {
+        max-height: 300px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        background: var(--bg-page);
+        border: 1px solid var(--border-light);
+        border-radius: 8px;
+      }
+
+      .ai-msg {
+        max-width: 88%;
+        padding: 10px 13px;
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.55;
+        white-space: pre-line;
+      }
+
+      .ai-msg-user {
+        align-self: flex-end;
+        background: var(--accent-dark);
+        color: #ffffff;
+      }
+
+      .ai-msg-bot {
+        align-self: flex-start;
+        background: #ffffff;
+        color: var(--text-primary);
+        border: 1px solid var(--border-light);
+      }
+
+      .ai-chat-form {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .ai-chat-input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: 9px 12px;
+        font-size: 13px;
+        color: var(--text-primary);
+        background: #ffffff;
+        outline: none;
+      }
+
+      .ai-chat-input:focus {
+        border-color: var(--accent-teal);
+      }
+
+      .ai-chat-send {
+        border: none;
+        background: var(--accent-teal);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 9px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .ai-chat-send:hover {
+        background: #0f766e;
+      }
+
+      :root {
+        --text-muted: #64748b;
+      }
+      body {
+        font-family:
+          Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      .data-status {
+        padding: 14px 18px;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        background: #fff;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.7;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .data-status.error {
+        background: #fff1f2;
+        border-color: #fecdd3;
+        color: #9f1239;
+      }
+      .source-coverage {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        padding: 12px 18px;
+        border-radius: 12px;
+        margin: 12px 0 20px;
+        font-size: 12px;
+        color: #475569;
+      }
+      .source-coverage summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .coverage-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .coverage-item {
+        padding: 12px;
+        background: #f8fafc;
+        border-radius: 8px;
+        line-height: 1.8;
+      }
+      .empty-data {
+        padding: 24px;
+        color: #64748b;
+        font-size: 13px;
+        line-height: 1.8;
+      }
+      .detail-dialog {
+        width: min(1100px, 94vw);
+        max-height: 85vh;
+        border: 1px solid #cbd5e1;
+        border-radius: 16px;
+        padding: 24px;
+        overflow: auto;
+        box-shadow: 0 24px 80px #0f172a33;
+      }
+      .detail-dialog::backdrop {
+        background: #0f172a66;
+      }
+      .detail-pagination {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: flex-end;
+        margin-top: 16px;
+      }
+      .detail-dialog th,
+      .detail-dialog td {
+        padding: 12px;
+        white-space: normal;
+        word-break: break-word;
+      }
+      .detail-dialog table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .detail-dialog pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+      }
+      .metric-button {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: #2563eb;
+        text-decoration: underline;
+        cursor: pointer;
+        font: inherit;
+      }
+      .source-note {
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.8;
+        padding: 12px 0;
+      }
+      .filter-bar a {
+        text-decoration: none;
+      }
+      .ai-chat-log {
+        white-space: pre-wrap;
+      }
+      .chart-empty {
+        text-align: center;
+        color: #64748b;
+        font-size: 13px;
+        padding-top: 60px;
+      }
+      .topbar-inner {
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .brand-group {
+        min-width: 250px;
+      }
+      .filter-bar {
+        flex: 1;
+      }
+      .data-status button {
+        white-space: nowrap;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      table th {
+        white-space: nowrap;
+      }
+      .mono {
+        font-variant-numeric: tabular-nums;
+      }
+      #detailView[aria-busy="true"] {
+        opacity: 0.65;
+        pointer-events: none;
+      }
+      .main-container {
+        padding-bottom: 80px;
+      }
+      #aiChatInput {
+        min-width: 0;
+      }
+      @media (max-width: 700px) {
+        .date-strip-wrap {
+          max-width: 100%;
+        }
+        .date-popover {
+          position: fixed;
+          left: 3vw;
+          right: 3vw;
+          top: 15vh;
+          width: 94vw;
+          max-height: 75vh;
+          overflow: auto;
+        }
+        .dual-calendars {
+          grid-template-columns: 1fr;
+        }
+        .filter-bar {
+          width: 100%;
+          gap: 8px;
+        }
+        .data-status {
+          font-size: 12px;
+        }
+        .detail-dialog {
+          padding: 16px;
+        }
+        .density-fab {
+          bottom: 8px;
+        }
+      }
+      #expenseList {
+        max-height: 530px;
+        overflow: auto;
+        padding-right: 6px;
+      }
+      .detail-dialog[open] {
+        display: block;
+      }
+      .ai-chat-message {
+        padding: 14px 16px;
+        border-radius: 10px;
+        background: #f8fafc;
+        line-height: 1.8;
+        margin: 8px 0;
+        color: #334155;
+      }
+      .ai-chat-message.user {
+        background: #f0fdfa;
+        color: #115e59;
+      }
+      #aiChatLog:empty {
+        display: none;
+      }
+      .cal-day {
+        border: 0;
+        background: none;
+      }
+      .cal-day.in-range {
+        background: #e2e8f0;
+      }
+      .cal-day.range-start,
+      .cal-day.range-end {
+        background: #0f172a;
+        color: white;
+      }
+      .metric-button:focus-visible {
+        outline: 2px solid #2563eb;
+        outline-offset: 4px;
+      }
+      @media (max-width: 700px) {
+        .brand-group {
+          max-width: 100%;
+        }
+        .brand-sub {
+          white-space: normal;
+          line-height: 1.6;
+        }
+        .date-strip-wrap {
+          width: 100%;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          padding: 8px;
+        }
+        .date-strip-wrap .compare-v-divider {
+          display: none;
+        }
+        .compare-range-text {
+          white-space: normal;
+        }
+        .date-popover {
+          flex-direction: column;
+          max-width: 94vw;
+        }
+        .date-presets {
+          width: 100%;
+          flex-direction: row;
+          flex-wrap: wrap;
+          border-right: 0;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .preset-btn {
+          width: calc(50% - 5px);
+        }
+        .date-calendar-pane {
+          padding: 12px;
+        }
+        .cal-day {
+          min-width: 0;
+        }
+        .filter-bar .control-select {
+          max-width: 100%;
+        }
+        .topbar-inner {
+          min-width: 0;
+        }
+        .kpi-bottom-text {
+          white-space: normal;
+        }
+        .ai-chat-form {
+          flex-wrap: wrap;
+        }
+        .ai-chat-input {
+          width: 100%;
+        }
+        .ai-chat-send {
+          width: 100%;
+        }
+      }
+      .workspace-nav {
+        display: flex;
+        gap: 20px;
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 0 24px 12px;
+      }
+      .workspace-nav a {
+        font-size: 12px;
+        color: #64748b;
+        text-decoration: none;
+        padding: 6px 0;
+        border-bottom: 2px solid transparent;
+      }
+      .workspace-nav a[aria-current="page"] {
+        color: #0f766e;
+        border-color: #0f766e;
+        font-weight: 600;
+      }
+      .workspace-nav a:hover {
+        color: #0f766e;
+      }
+      @media (max-width: 700px) {
+        .dual-calendars > div:nth-child(2) {
+          display: none;
+        }
+        .workspace-nav {
+          gap: 16px;
+          padding: 0 24px 10px;
+        }
+        .date-popover-footer {
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-group">
+          <span class="brand-badge">TTS PRO</span>
+          <div class="safe-text">
+            <div class="brand-title">TikTok Shop 经营数据看板</div>
+            <div class="brand-sub" id="activeWindowSubtitle">
+              正在读取真实数据…
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <a href="/?view=chat" class="ai-chip-btn">← 运营助手</a
+          ><button id="refreshDataBtn" class="apply-range-btn">
+            刷新真实数据
+          </button>
+          <select
+            id="siteSelect"
+            class="control-select"
+            aria-label="选择站点"
+          ></select>
+
+          <select
+            id="storeSelect"
+            class="control-select"
+            aria-label="选择店铺"
+          ></select>
+
+          <div class="date-strip-wrap" id="dateStripWrap">
+            <input
+              type="text"
+              id="startDateInput"
+              class="date-input-inline mono"
+              value="—"
+              aria-label="开始日期"
+            />
+            <span class="date-sep">-</span>
+            <input
+              type="text"
+              id="endDateInput"
+              class="date-input-inline mono"
+              value="—"
+              aria-label="结束日期"
+            />
+            <span class="compare-v-divider"></span>
+            <span class="compare-label">对比</span>
+            <span id="compareRangeText" class="compare-range-text mono"
+              >前一等长周期</span
+            >
+            <button
+              type="button"
+              id="openPickerBtn"
+              class="strip-icon-btn"
+              title="选择日期区间"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              id="exportCsvBtn"
+              class="strip-icon-btn"
+              title="导出当前视图CSV"
+            >
+              ⬇
+            </button>
+            <button
+              type="button"
+              id="resetDefaultBtn"
+              class="strip-icon-btn"
+              title="重置为今天"
+            >
+              ◫
+            </button>
+
+            <div
+              id="datePopover"
+              class="date-popover hidden"
+              role="dialog"
+              aria-label="选择日期周期"
+            >
+              <div class="date-presets">
+                <button
+                  type="button"
+                  class="preset-btn"
+                  data-preset="today"
+                >
+                  今天
+                </button>
+                <button
+                  type="button"
+                  class="preset-btn"
+                  data-preset="yesterday"
+                >
+                  昨天
+                </button>
+                <button type="button" class="preset-btn" data-preset="last7">
+                  最近 7 天
+                </button>
+                <button type="button" class="preset-btn" data-preset="last30">
+                  最近 30 天
+                </button>
+              </div>
+              <div class="date-calendar-pane">
+                <div class="custom-tab-bar">
+                  <button
+                    type="button"
+                    id="customRangeBtn"
+                    class="custom-tab-pill"
+                  >
+                    自定义
+                  </button>
+                </div>
+                <div class="dual-calendars" id="dualCalendars"></div>
+                <div class="date-popover-footer">
+                  <span class="mono" id="rangePreviewText">已选：— - —</span>
+                  <button
+                    type="button"
+                    id="applyRangeBtn"
+                    class="apply-range-btn"
+                  >
+                    应用周期
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="seg-group" id="viewModeGroup">
+            <button type="button" class="seg-btn active" data-mode="detail">
+              单维度深度分析
+            </button>
+            <button type="button" class="seg-btn" data-mode="compare">
+              多站点/店铺横向对比
+            </button>
+          </div>
+        </div>
+      </div>
+      <nav class="workspace-nav" aria-label="数据工作台导航">
+        <a href="/analytics.html" aria-current="page">经营分析</a
+        ><a href="/?view=orders">订单中心</a
+        ><a href="/?view=inventory">实物库存</a
+        ><a href="/?view=finance">成本与利润</a>
+      </nav>
+    </header>
+
+    <main class="main-container">
+      <div id="dataStatus" class="data-status" role="status" aria-live="polite">
+        正在读取授权店铺…
+      </div>
+      <details class="source-coverage">
+        <summary>数据来源与更新状态</summary>
+        <div id="coverageContent"></div>
+      </details>
+      <section
+        id="detailView"
+        style="display: flex; flex-direction: column; gap: var(--gap-grid)"
+      >
+        <!-- Top 4 KPI Summary Cards -->
+        <div class="grid-4" id="topKpiGrid">
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span>总订单量 (Total Orders)</span>
+              <span class="kpi-icon-box">▦</span>
+            </div>
+            <div class="kpi-value-row">
+              <span class="kpi-main-num mono" id="kpiTotalOrders">--</span>
+            </div>
+            <div class="kpi-bottom-text mono" id="kpiGmvAov">
+              GMV: -- · AOV: --
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span>已签收订单 (Delivered)</span>
+              <span class="kpi-icon-box" style="color: var(--positive)">✓</span>
+            </div>
+            <div class="kpi-value-row">
+              <span class="kpi-main-num mono" id="kpiDeliveredOrders">--</span>
+              <span
+                class="kpi-sub-inline mono"
+                style="color: var(--positive)"
+                id="kpiDeliveredRate"
+                >--%</span
+              >
+            </div>
+            <div class="kpi-bottom-text mono" id="kpiInTransit">
+              在途/待发: -- 单
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span>已取消订单</span>
+              <span class="kpi-icon-box" style="color: var(--warning)">!</span>
+            </div>
+            <div class="kpi-value-row">
+              <span
+                class="kpi-main-num mono"
+                style="color: var(--warning)"
+                id="kpiUnsignedOrders"
+                >--</span
+              >
+              <span
+                class="kpi-sub-inline mono"
+                style="color: var(--text-secondary)"
+                id="kpiUnsignedRate"
+                >--%</span
+              >
+            </div>
+            <div class="kpi-bottom-text">
+              取消不等于物流异常；运输中单独统计
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span>联盟实际佣金（已知部分）</span>
+              <span class="kpi-icon-box" style="color: var(--accent-blue)"
+                >∞</span
+              >
+            </div>
+            <div class="kpi-value-row">
+              <span class="kpi-main-num mono" id="kpiCreatorCommTotal">--</span>
+            </div>
+            <div class="kpi-bottom-text mono" id="kpiCreatorCommSplit">
+              标准 -- + 广告 --
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Data Insights & Interactive Q&A Module -->
+        <article class="card ai-insight-card" id="aiInsightsModule">
+          <div class="card-header">
+            <div class="safe-text">
+              <span class="ai-header-badge">INSIGHTS · 经营信号与数据解读</span>
+              <h2 class="card-title">AI 关键数据洞察 &amp; 指标追问助手</h2>
+              <p class="card-desc">
+                基于当前筛选的站点、店铺与日期周期自动提炼核心经营信号；你也可以直接向
+                AI 提问对某项数据的理解与排查建议
+              </p>
+            </div>
+            <span class="pill-badge mono" id="aiContextBadge"
+              >上下文：MY · 全部店铺</span
+            >
+          </div>
+
+          <div class="ai-insights-grid" id="aiInsightsGrid"></div>
+
+          <div class="ai-chat-panel">
+            <div class="ai-chat-head">
+              <strong style="font-size: 14px"
+                >向 AI 追问当前数据（基于当前筛选的真实汇总）</strong
+              >
+              <button type="button" class="ai-chip-btn" id="clearAiChatBtn">
+                清空对话
+              </button>
+            </div>
+
+            <div class="ai-quick-prompts" id="aiQuickPrompts">
+              <button
+                type="button"
+                class="ai-chip-btn"
+                data-q="为什么会有负回款订单，优先排查哪几类原因？"
+              >
+                解读：负回款与未回款原因
+              </button>
+              <button
+                type="button"
+                class="ai-chip-btn"
+                data-q="当前各项支出里哪几项占营收比例或环比变化最值得关注？"
+              >
+                解读：支出项结构与环比
+              </button>
+              <button
+                type="button"
+                class="ai-chip-btn"
+                data-q="销量上升和销量下降的 SKU 主要受视频还是广告影响？"
+              >
+                解读：SKU 涨跌与证据
+              </button>
+              <button
+                type="button"
+                class="ai-chip-btn"
+                data-q="达人佣金支出和达人带货单量表现如何？"
+              >
+                解读：达人带货与双佣金
+              </button>
+              <button
+                type="button"
+                class="ai-chip-btn"
+                data-q="未签收异常单目前占比如何，主要卡在哪些环节？"
+              >
+                解读：未签收异常单分布
+              </button>
+            </div>
+
+            <div class="ai-chat-log" id="aiChatLog"></div>
+
+            <form class="ai-chat-form" id="aiChatForm">
+              <input
+                type="text"
+                id="aiChatInput"
+                class="ai-chat-input"
+                placeholder="例如：帮我分析一下当前已签收回款和负回款的情况，或者解释一下实际物流运费占营收的比例..."
+                autocomplete="off"
+              />
+              <button type="submit" class="ai-chat-send">发送提问</button>
+            </form>
+          </div>
+        </article>
+
+        <!-- Module 04: Payout Split + Reason Breakdown + Settlement & Expense Drilldown -->
+        <article class="card" id="module04">
+          <div class="card-header">
+            <div class="safe-text">
+              <span class="module-tag"
+                >MODULE 04 · 结算对账 · UTC 账单生成日期</span
+              >
+              <h2 class="card-title">结算流水、费用结构与订单明细</h2>
+              <p class="card-desc">
+                同时支持支出项金额分布与环比变化；点击任意支出项可查看「费用净额非零订单数」、「支出占该类订单金额比例」及「费用净额明确零订单数」
+              </p>
+            </div>
+            <div class="header-badges">
+              <span class="pill-badge mono" id="settledBadge"
+                >已结算订单：-- 单</span
+              >
+              <span class="pill-badge pill-pos mono" id="normalPayoutRateBadge"
+                >正常回款率 --%</span
+              >
+            </div>
+          </div>
+
+          <!-- Payout Split & Reason Breakdown -->
+          <div class="grid-2" style="margin-bottom: 20px">
+            <div class="payout-left-stack">
+              <div class="payout-status-card normal">
+                <div class="payout-card-head">
+                  <span class="dot" style="background: var(--positive)"></span>
+                  <span>本期正净结算订单</span>
+                </div>
+                <div class="payout-card-body">
+                  <div>
+                    <span class="payout-count-num mono" id="normalPayoutCount"
+                      >--</span
+                    >
+                    <span style="font-size: 12px; color: var(--text-secondary)">
+                      单</span
+                    >
+                    <span
+                      class="mono"
+                      style="
+                        font-size: 12px;
+                        color: var(--positive);
+                        font-weight: 600;
+                        margin-left: 6px;
+                      "
+                      id="normalPayoutPct"
+                      >占已签收 --%</span
+                    >
+                  </div>
+                  <div class="payout-amt-box">
+                    <div class="payout-amt-label">正净结算额</div>
+                    <div
+                      class="payout-amt-val mono"
+                      style="color: var(--positive)"
+                      id="normalPayoutAmt"
+                    >
+                      --
+                    </div>
+                  </div>
+                </div>
+                <div class="payout-card-foot">
+                  本期订单结算流水合计大于零，非逐单银行到账
+                </div>
+              </div>
+
+              <div class="payout-status-card pending">
+                <div class="payout-card-head">
+                  <span class="dot" style="background: var(--warning)"></span>
+                  <span>本期零净结算订单</span>
+                </div>
+                <div class="payout-card-body">
+                  <div>
+                    <span class="payout-count-num mono" id="unpaidPayoutCount"
+                      >--</span
+                    >
+                    <span style="font-size: 12px; color: var(--text-secondary)">
+                      单</span
+                    >
+                    <span
+                      class="mono"
+                      style="
+                        font-size: 12px;
+                        color: var(--warning);
+                        font-weight: 600;
+                        margin-left: 6px;
+                      "
+                      id="unpaidPayoutPct"
+                      >占已签收 --%</span
+                    >
+                  </div>
+                  <div class="payout-amt-box">
+                    <div class="payout-amt-label">零净结算额</div>
+                    <div
+                      class="payout-amt-val mono"
+                      style="color: var(--warning)"
+                      id="unpaidPayoutAmt"
+                    >
+                      --
+                    </div>
+                  </div>
+                </div>
+                <div class="payout-card-foot">
+                  明确返回零净额，不代表未回款或账期冻结
+                </div>
+              </div>
+
+              <div class="payout-status-card negative">
+                <div class="payout-card-head">
+                  <span class="dot" style="background: var(--negative)"></span>
+                  <span>本期负净结算订单</span>
+                </div>
+                <div class="payout-card-body">
+                  <div>
+                    <span class="payout-count-num mono" id="negPayoutCount"
+                      >--</span
+                    >
+                    <span style="font-size: 12px; color: var(--text-secondary)">
+                      单</span
+                    >
+                    <span
+                      class="mono"
+                      style="
+                        font-size: 12px;
+                        color: var(--negative);
+                        font-weight: 600;
+                        margin-left: 6px;
+                      "
+                      id="negPayoutPct"
+                      >占已签收 --%</span
+                    >
+                  </div>
+                  <div class="payout-amt-box">
+                    <div class="payout-amt-label">负净结算额</div>
+                    <div
+                      class="payout-amt-val mono"
+                      style="color: var(--negative)"
+                      id="negPayoutAmt"
+                    >
+                      --
+                    </div>
+                  </div>
+                </div>
+                <div class="payout-card-foot">
+                  净结算为负不等于净利润为负，仍需核对成本
+                </div>
+              </div>
+            </div>
+
+            <div class="reason-panel">
+              <div>
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 8px;
+                    margin-bottom: 10px;
+                    flex-wrap: wrap;
+                  "
+                >
+                  <strong style="font-size: 14px"
+                    >账单支付状态与调整流水</strong
+                  >
+                  <span
+                    class="mono"
+                    style="font-size: 12px; color: var(--text-muted)"
+                    id="unpaidPlusNegTotal"
+                    >未回款+负回款: -- 单</span
+                  >
+                </div>
+                <div id="payoutReasonList"></div>
+              </div>
+
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  gap: 8px;
+                  padding-top: 8px;
+                  border-top: 1px solid var(--border-light);
+                  font-size: 12px;
+                  color: var(--text-secondary);
+                  flex-wrap: wrap;
+                "
+              >
+                <span>结算日期与订单创建日期是不同口径，不做逐单到账推断</span>
+                <span class="mono" style="color: var(--text-muted)"
+                  >TikTok Shop Finance API</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-3" style="margin-bottom: 16px">
+            <div class="recon-stat-card">
+              <div class="recon-stat-label">总结算金额（已结算订单净额）</div>
+              <div class="recon-stat-main mono" id="netSettlementVal">--</div>
+              <div class="recon-stat-sub" id="netSettlementCompare">
+                对比上期：--
+              </div>
+            </div>
+            <div class="recon-stat-card">
+              <div class="recon-stat-label">
+                已结算订单营收（Total Revenue）与费用合计
+              </div>
+              <div class="recon-stat-main mono" id="revAndFeeVal">--</div>
+              <div class="recon-stat-sub" id="revAndFeeCompare">
+                净结算率：--
+              </div>
+            </div>
+            <div class="recon-stat-card">
+              <div class="recon-stat-label">本期账单已支付金额</div>
+              <div class="recon-stat-main mono" id="abnormalSettleVal">--</div>
+              <div class="recon-stat-sub">
+                平台PAID状态的账单净结算额；银行到账请以收款账户核对
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div>
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 10px;
+                  gap: 8px;
+                  flex-wrap: wrap;
+                "
+              >
+                <strong class="safe-text"
+                  >各项支出项金额分布与对比上期（点击某一项查看订单穿透）</strong
+                >
+                <span
+                  class="mono"
+                  style="font-size: 12px; color: var(--text-muted)"
+                  id="totalExpenseSumLabel"
+                  >支出合计：--</span
+                >
+              </div>
+              <div class="expense-list" id="expenseList"></div>
+            </div>
+
+            <div class="inspector-box" id="expenseInspector">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: flex-start;
+                  gap: 8px;
+                "
+              >
+                <div class="safe-text">
+                  <span class="module-tag" style="margin-bottom: 4px"
+                    >支出项订单穿透详情</span
+                  >
+                  <h3 style="font-size: 16px; font-weight: 700" id="inspTitle">
+                    --
+                  </h3>
+                  <p
+                    style="font-size: 12px; color: var(--text-secondary)"
+                    id="inspSub"
+                  >
+                    --
+                  </p>
+                </div>
+                <span class="pill-badge mono" id="inspMomBadge">变化 --</span>
+              </div>
+
+              <div class="inspector-grid">
+                <div class="inspector-metric">
+                  <div class="inspector-metric-title">费用净额非零订单</div>
+                  <div class="inspector-metric-val mono" id="inspHasCount">
+                    --
+                  </div>
+                  <div class="inspector-metric-note" id="inspHasRate">
+                    占已结算订单 --
+                  </div>
+                </div>
+                <div class="inspector-metric">
+                  <div class="inspector-metric-title">
+                    支出金额占「有该支出订单」比例
+                  </div>
+                  <div class="inspector-metric-val mono" id="inspShareRatio">
+                    --
+                  </div>
+                  <div class="inspector-metric-note" id="inspShareFormula">
+                    该支出总额 ÷ 有该支出订单营收基准
+                  </div>
+                </div>
+                <div class="inspector-metric">
+                  <div class="inspector-metric-title">费用净额明确零订单</div>
+                  <div class="inspector-metric-val mono" id="inspNoCount">
+                    --
+                  </div>
+                  <div class="inspector-metric-note" id="inspNoNote">
+                    当前周期内未发生该项扣减
+                  </div>
+                </div>
+              </div>
+
+              <div class="chart-box" style="height: 190px">
+                <canvas id="expenseChart"></canvas>
+              </div>
+
+              <div class="note-foot">
+                费用保留平台原始正负号；正数可能为补贴或退费。仅统计明确返回该字段的订单，未知不计入“无费用”。点击数量查看订单明细。
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Module 02: SKU Sales Trend + Video & Ad Attribution -->
+        <article class="card" id="module02">
+          <div class="card-header">
+            <div class="safe-text">
+              <span class="module-tag">MODULE 02 · SKU 销量与商品视频关联</span>
+              <h2 class="card-title">SKU 销量对比与商品关联证据</h2>
+              <p class="card-desc">
+                已支付非取消订单的商品件数，未扣售后退货；商品视频关联不等于SKU转化归因。点击行查看订单。
+              </p>
+            </div>
+            <div class="seg-group" id="skuFilterGroup">
+              <button
+                type="button"
+                class="seg-btn active"
+                data-sku-filter="all"
+              >
+                全部 SKU
+              </button>
+              <button type="button" class="seg-btn" data-sku-filter="up">
+                销量上升
+              </button>
+              <button type="button" class="seg-btn" data-sku-filter="down">
+                销量下降
+              </button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU / 商品名称</th>
+                  <th>本周期销量</th>
+                  <th>上周期销量</th>
+                  <th>变化幅度</th>
+                  <th>视频数据联动</th>
+                  <th>广告数据联动</th>
+                  <th>证据与限制</th>
+                </tr>
+              </thead>
+              <tbody id="skuTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="diag-banner safe-text" id="skuDiagBox">
+            选择SKU查看实际销量与证据。
+          </div>
+        </article>
+
+        <!-- Module 01 & Module 03 -->
+        <div class="grid-2">
+          <article class="card" id="module01">
+            <div class="card-header">
+              <div class="safe-text">
+                <span class="module-tag">MODULE 01 · 订单地域分布</span>
+                <h3 class="card-title">订单来源地区分布及数量</h3>
+                <p class="card-desc">
+                  按核心省份/州统计订单量及占比，辅助区域备货与物流时效评估
+                </p>
+              </div>
+              <span class="pill-badge mono" id="regionTotalBadge"
+                >总计 -- 单</span
+              >
+            </div>
+            <div class="chart-box">
+              <canvas id="regionChart"></canvas>
+            </div>
+          </article>
+
+          <article class="card" id="module03">
+            <div class="card-header">
+              <div class="safe-text">
+                <span class="module-tag">MODULE 03 · 订单状态与取消原因</span>
+                <h3 class="card-title">订单状态分布与平台返回的取消原因</h3>
+                <p class="card-desc">
+                  在途、待发和已取消分别统计；没有物流异常与售后明细时不推测拒收、丢件原因。
+                </p>
+              </div>
+              <span class="pill-badge pill-warn mono" id="unsignedBadge"
+                >未签收 -- 单</span
+              >
+            </div>
+            <div
+              class="grid-2"
+              style="
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 12px;
+              "
+            >
+              <div class="chart-box" style="height: 210px">
+                <canvas id="orderStatusChart"></canvas>
+              </div>
+              <div class="chart-box" style="height: 210px">
+                <canvas id="unsignedReasonChart"></canvas>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <!-- Module 05 & Module 06 -->
+        <div class="grid-2">
+          <article class="card" id="module05">
+            <div class="card-header">
+              <div class="safe-text">
+                <span class="module-tag">MODULE 05 · 下单时间分布</span>
+                <h3 class="card-title">24 小时下单时段分布（站点当地时间）</h3>
+                <p class="card-desc">
+                  按店铺时区统计创建时间；展示真实分布，不预设高峰或因果。
+                </p>
+              </div>
+              <span class="pill-badge mono" id="peakHourBadge"
+                >峰值时段 --</span
+              >
+            </div>
+            <div class="chart-box">
+              <canvas id="hourChart"></canvas>
+            </div>
+          </article>
+
+          <article class="card" id="module06">
+            <div class="card-header">
+              <div class="safe-text">
+                <span class="module-tag">MODULE 06 · 平台渠道归因 GMV</span>
+                <h3 class="card-title">视频 / 直播 / 商品卡归因 GMV</h3>
+                <p class="card-desc">
+                  平台按支付期统计，包含取消和退款；渠道可能归因重叠，不当作订单数量。
+                </p>
+              </div>
+              <span class="pill-badge mono" id="channelTopBadge"
+                >主阵地 --</span
+              >
+            </div>
+            <div class="chart-box">
+              <canvas id="channelChart"></canvas>
+            </div>
+          </article>
+        </div>
+
+        <!-- Module 07: Creator vs Non-Creator & Dual Commission -->
+        <article class="card" id="module07">
+          <div class="card-header">
+            <div class="safe-text">
+              <span class="module-tag">MODULE 07 · 联盟订单与双佣金核算</span>
+              <h3 class="card-title">联盟达人订单、实际佣金与预估佣金</h3>
+              <p class="card-desc">
+                未匹配联盟订单保留“未分类”，不会直接视为自营；实际佣金仅统计SETTLED且明确返回的金额。
+              </p>
+            </div>
+            <div class="seg-group" id="creatorSortGroup">
+              <button type="button" class="seg-btn active" data-sort="orders">
+                按销量排序
+              </button>
+              <button type="button" class="seg-btn" data-sort="stdComm">
+                按标准佣金排序
+              </button>
+              <button type="button" class="seg-btn" data-sort="adComm">
+                按广告佣金排序
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="grid-3"
+            style="margin-bottom: 14px"
+            id="creatorSplitCards"
+          ></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>达人账号 / 类型</th>
+                  <th>联盟订单 / 件数</th>
+                  <th>已知实际佣金基数</th>
+                  <th>标准佣金</th>
+                  <th>广告佣金</th>
+                  <th>佣金合计</th>
+                </tr>
+              </thead>
+              <tbody id="creatorTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- View Mode 2: Multi-Site / Multi-Store Horizontal Comparison -->
+      <section id="compareView" class="card hidden">
+        <div class="card-header">
+          <div class="safe-text">
+            <span class="module-tag"
+              >CROSS-SITE &amp; CROSS-STORE MATRIX · 横向对比</span
+            >
+            <h2 class="card-title">
+              不同站点与不同店铺核心订单、结算与达人佣金横向对比
+            </h2>
+            <p class="card-desc">
+              每家店铺保留原币与数据完整性；跨币种金额不求和。结算按UTC账单日期，取消率按当地订单创建日期。
+            </p>
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-bottom: 16px">
+          <table>
+            <thead>
+              <tr>
+                <th>站点 / 店铺</th>
+                <th>币种</th>
+                <th>已结算订单数</th>
+                <th>总结算金额</th>
+                <th>环比变化</th>
+                <th>取消率</th>
+                <th>达人标准佣金</th>
+                <th>达人广告佣金</th>
+              </tr>
+            </thead>
+            <tbody id="compareTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="chart-box" style="height: 290px">
+          <canvas id="compareChart"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <div class="density-fab" aria-label="布局密度切换">
+      <button type="button" class="density-btn active" id="densityComfortable">
+        舒适
+      </button>
+      <button type="button" class="density-btn" id="densityCompact">
+        紧凑
+      </button>
+    </div>
+
+    <dialog id="detailDialog" class="detail-dialog">
+      <div class="card-header">
+        <h3 id="detailTitle">订单明细</h3>
+        <button id="closeDetails" class="ai-chip-btn">关闭</button>
+      </div>
+      <div id="detailContent"></div>
+      <div class="detail-pagination">
+        <button id="detailPrev" class="ai-chip-btn">上一页</button
+        ><span id="detailPage"></span
+        ><button id="detailNext" class="ai-chip-btn">下一页</button>
+      </div>
+    </dialog>
+    <script type="module" src="/src/analytics.js"></script>
+  </body>
+</html>
