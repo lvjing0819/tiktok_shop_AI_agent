@@ -123,13 +123,13 @@ def test_ai_summary_excludes_order_ids_and_buyer_data(client,monkeypatch):
 def test_worker_partial_refresh_preserves_last_good_source(client,monkeypatch):
     snapshot('finance',{'statements':[],'rows':[]})
     old=s.snapshot('default','1','finance',WINDOW)
-    async def fetch(workspace,shop,source,window,heartbeat):
+    async def fetch(workspace,shop,source,window,heartbeat,**kwargs):
         heartbeat()
         if source=='finance':raise s.api.ShopAPIError(105005,'safe-request')
         return {'id':s.key(workspace,shop['id'],source,window.start_date,window.end_date),'shop_id':shop['id'],'source':source,'data':{},'complete':source!='videos','retrieved_at':time.time(),'evidence':[]}
     monkeypatch.setattr(s,'fetch_source',fetch)
     j=s.enqueue('default',WINDOW)
-    assert s.process_one()
+    for _ in range(10): assert s.process_one()
     job=store.get(j['id'],'analytics_job')
     assert job['status']=='partial' and job['progress']==10 and len(job['partial_sources'])==2
     assert len(job['errors'])==2 and job['errors'][0]['platform_code']==105005
@@ -176,7 +176,7 @@ def test_ensure_worker_fetches_only_missing_period_sources(client, monkeypatch):
                 continue
             snapshot(source, {}, window)
     calls = []
-    async def fetch(workspace, shop, source, window, heartbeat):
+    async def fetch(workspace, shop, source, window, heartbeat, **kwargs):
         calls.append((source, window.start_date))
         return {'id': s.key(workspace, shop['id'], source, window.start_date, window.end_date),
                 'shop_id': shop['id'], 'source': source, 'data': {}, 'complete': True,
@@ -185,6 +185,7 @@ def test_ensure_worker_fetches_only_missing_period_sources(client, monkeypatch):
     job = s.ensure('default', WINDOW)['job']
     assert job['total'] == 2
     assert s.ensure('default', WINDOW)['job']['id'] == job['id']
+    assert s.process_one()
     assert s.process_one()
     assert calls == [('orders', WINDOW.previous().start_date), ('finance', WINDOW.previous().start_date)]
     assert store.get(job['id'], 'analytics_job')['status'] == 'completed'

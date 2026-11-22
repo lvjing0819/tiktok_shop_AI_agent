@@ -13,7 +13,7 @@ function report(filters) {
  const period = () => ({coverage:Object.fromEntries(sources.map(s=>[s,{status:'missing',retrieved_at:null,evidence:[],stale:false}])),orders:null,finance:null,affiliate:null,performance:null});
  return {window:filters,previous_window:{...filters,start_date:'2026-11-08',end_date:'2026-11-14'},shops:[{shop,current:period(),previous:period(),skus:[]}],notes:[]};
 }
-async function app(t) {
+async function app(t, reply = value => value) {
  const dom = new JSDOM(markup,{url:'http://localhost/analytics.html?view=dashboard',runScripts:'outside-only',pretendToBeVisual:true});
  t.after(()=>dom.window.close());
  const w=dom.window,logs=[],timers=new Map();let nextTimer=0;
@@ -31,6 +31,7 @@ async function app(t) {
   else if(url.pathname.endsWith('/ensure')) data={reason:'running',job:{id:body.start_date,status:'running',total:10,progress:0,created_at:w.Date.now()/1000}};
   else if(url.pathname.includes('/refresh/')) data={id:url.pathname.split('/').at(-1),status:'running',total:10,progress:0,created_at:w.Date.now()/1000};
   else throw Error('Unexpected request: '+path);
+  data = reply(data, url);
   return {ok:true,status:200,json:async()=>data};
  };
  w.eval(source);
@@ -70,4 +71,33 @@ test('the 30-day preset navigates to its start month without applying until conf
  assert.equal($('startDateInput').value,'2026/11/15');
  assert.match($('dualCalendars').textContent,/2026年 10月/);
  const start=$('dualCalendars').querySelector('[data-date="2026-10-24"]');assert.ok(start);assert.equal(start.disabled,false);
+});
+
+test('page checkpoints render local orders even when source completion count is unchanged',async t=>{
+ let phase=0;
+ const {$,timers,wait}=await app(t,(data,url)=>{
+  if(url.pathname.includes('/refresh/')) return {...data,data_version:phase,active_source:{source:'orders',shop:'Test Shop',period:'current',rows_read:2,rows_total:100}};
+  if(phase && url.pathname.endsWith('/dashboard')) {
+   data.shops[0].current.orders={total:2,delivered:1,cancelled:0,in_transit:1,statuses:[],regions:[],cancellation_reasons:[],hours:Array(24).fill(0),skus:[]};
+   data.shops[0].current.coverage.orders={status:'partial',storage:'local_database',observed_days:7,total_days:7,evidence:[]};
+  }
+  return data;
+ });
+ phase=1; const next=timers.values().next().value;assert.ok(next);await next();
+ await wait(()=>$('kpiTotalOrders').textContent==='已读取 2');
+ assert.match($('dataStatus').textContent,/订单明细 2\/100/);
+ assert.match($('sourceSummary').textContent,/本地覆盖 7\/7 天/);
+});
+
+test('cached order cards remain visible while platform-only analysis waits in queue',async t=>{
+ const {$,wait}=await app(t,(data,url)=>{
+  if(url.pathname.includes('/refresh/')) return {...data,status:'queued'};
+  if(url.pathname.endsWith('/dashboard')) {
+   data.shops[0].current.orders={total:333,delivered:300,cancelled:3,in_transit:30,statuses:[],regions:[],cancellation_reasons:[],hours:Array(24).fill(0),skus:[]};
+   data.shops[0].current.coverage.orders={status:'complete',storage:'local_database',observed_days:7,total_days:7,evidence:[]};
+  }
+  return data;
+ });
+ await wait(()=>$('dataStatus').textContent.includes('同步排队中'));
+ assert.equal($('kpiTotalOrders').textContent,'333');
 });

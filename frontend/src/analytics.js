@@ -68,6 +68,7 @@ let shops = [],
 const charts = {};
 const automaticRequests = new Set();
 let displayedProgress = -1;
+let displayedDataVersion = null;
 const names = {
   orders: "订单与省州",
   finance: "结算与费用",
@@ -251,7 +252,7 @@ function render() {
     o = p.orders,
     f = p.finance,
     a = p.affiliate;
-  text("kpiTotalOrders", num(o?.total));
+  text("kpiTotalOrders", o && p.coverage.orders.status !== "complete" ? `已读取 ${num(o.total)}` : num(o?.total));
   $("kpiTotalOrders").classList.add("metric-button");
   $("kpiTotalOrders").onclick = () => openDetails("orders");
   text("kpiDeliveredOrders", num(o?.delivered));
@@ -579,17 +580,21 @@ function sourceSummary() {
   $("sourceSummary").innerHTML = entries
     .map((row) => {
       const ready = Object.values(row.current.coverage).filter(
-        (c) => c.status !== "missing",
+        (c) => c.status === "complete",
       ).length;
       const previous = Object.values(row.previous.coverage).filter(
-        (c) => c.status !== "missing",
+        (c) => c.status === "complete",
       ).length;
-      return `<div class="source-summary-shop"><strong>${esc(row.shop.name)}</strong><span>本期已读取 ${ready}/5 · 对比期 ${previous}/5</span><div class="source-chips">${Object.entries(
+      return `<div class="source-summary-shop"><strong>${esc(row.shop.name)}</strong><span>本期完整 ${ready}/5 · 对比期完整 ${previous}/5</span><div class="source-chips">${Object.entries(
         row.current.coverage,
       )
         .map(
-          ([source, c]) =>
-            `<span class="source-chip ${c.status}" title="${c.retrieved_at ? esc(new Date(c.retrieved_at * 1000).toLocaleString("zh-CN")) : "该日期尚未获取"}">${names[source]} · ${statuses[c.status]}</span>`,
+          ([source, c]) => {
+            const failed = c.last_attempt?.status === "failed" && (!c.retrieved_at || c.last_attempt.attempted_at > c.retrieved_at);
+            const label = failed ? (c.status === "missing" ? "读取失败" : "已有数据，最近刷新失败") : statuses[c.status];
+            const local = c.storage === "local_database" ? ` · 本地覆盖 ${c.observed_days}/${c.total_days} 天` : "";
+            return `<span class="source-chip ${c.status}" title="${c.retrieved_at ? esc(new Date(c.retrieved_at * 1000).toLocaleString("zh-CN")) : "该日期尚未获取"}">${names[source]} · ${label}${local}</span>`;
+          },
         )
         .join("")}</div></div>`;
     })
@@ -598,7 +603,7 @@ function sourceSummary() {
 function missingData(value) {
   return value?.shops.some((row) =>
     ["current", "previous"].some((period) =>
-      Object.values(row[period].coverage).some((c) => c.status === "missing"),
+      Object.values(row[period].coverage).some((c) => c.status === "missing" || c.missing_dates?.length),
     ),
   );
 }
@@ -624,6 +629,7 @@ async function ensureData(g = generation) {
     if (result.job) {
       job = result.job;
       displayedProgress = -1;
+      displayedDataVersion = null;
       $("refreshDataBtn").disabled = true;
       void poll(job.id, g);
     } else if (result.reason === "recent_failure")
@@ -648,6 +654,7 @@ async function load() {
   clearTimeout(timer);
   job = null;
   displayedProgress = -1;
+  displayedDataVersion = null;
   $("refreshDataBtn").disabled = false;
   $("detailView").setAttribute("aria-busy", "true");
   $("aiChatLog").replaceChildren();
@@ -661,7 +668,7 @@ async function load() {
     render();
     if (missingData(value))
       status(
-        "所选日期有数据尚未读取，进入看板后自动同步；已获取的来源会先显示。",
+        "已显示所选日期的本地数据；缺少的日期或平台分析正在安排同步。未读取的指标显示为“—”，不代表没有订单。",
       );
   } catch (e) {
     if (e.name !== "AbortError" && g === generation) {
@@ -689,6 +696,7 @@ async function refresh() {
     if (g !== generation) return;
     job = value;
     displayedProgress = -1;
+    displayedDataVersion = null;
     void poll(job.id, g);
   } catch (e) {
     if (g === generation) {
@@ -705,18 +713,22 @@ async function poll(id, g) {
     job = value;
     const running = ["queued", "running"].includes(job.status);
     const progress = job.progress || 0;
-    if (displayedProgress !== progress || !running) {
+    if (displayedProgress !== progress || displayedDataVersion !== (job.data_version ?? null) || !running) {
       const snapshot = await json("/api/analytics/dashboard?" + query());
       if (g !== generation) return;
       report = snapshot;
       displayedProgress = progress;
+      displayedDataVersion = job.data_version ?? null;
       render();
     }
     if (running) {
-      const waiting =
-        job.status === "queued" && Date.now() / 1000 - job.created_at > 30;
+      const source = job.active_source;
+      const count = source?.statements_total != null ? ` · 账单 ${source.statements_read}/${source.statements_total} 份 · 流水 ${source.rows_read} 条`
+        : source?.rows_total != null ? ` · 订单明细 ${source.rows_read}/${source.rows_total} 笔` : "";
       status(
-        `数据同步 ${progress}/${job.total} · ${job.active_source ? job.active_source.shop + " / " + names[job.active_source.source] : "等待后台工作进程"}。已读取的数据正在逐项显示。${waiting ? "任务正在排队；若持续没有进度，请检查后台进程。" : ""}`,
+        job.status === "queued"
+          ? `同步排队中 · 已完成 ${progress}/${job.total} 项。已保存的数据可继续查看，后台将在当前读取结束后优先处理此日期范围。`
+          : `数据同步 ${progress}/${job.total} · ${source ? source.shop + " / " + (source.period === "previous" ? "对比期" : "本期") + " / " + names[source.source] : "正在读取"}${count}。已读取的数据会逐项显示。`,
       );
       timer = setTimeout(() => poll(id, g), 2500);
       return;

@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 def process_one():
     job = store.claim()
     if not job:
-        from app import harness, business_sync, analytics_sources
+        from app import harness, business_sync, analytics_sources, analytics_sync
+        analytics_sync.tick()
         return harness.process_one() or analytics_sources.process_one() or business_sync.process_one()
     stop = threading.Event()
     def heartbeat():

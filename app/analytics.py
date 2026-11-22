@@ -82,47 +82,69 @@ def aggregate_orders(rows, shop):
 
 
 def aggregate_finance(data, currency):
-    tx = [r for r in data.get('rows', []) if r.get('currency') == currency]
-    statements = [r for r in data.get('statements', []) if r.get('currency') == currency]
-    order_tx = [r for r in tx if r.get('type') == 'ORDER' and r.get('order_id')]
-    grouped = defaultdict(list)
-    for r in order_tx:
-        grouped[r['order_id']].append(r)
-    known = [{'order_id': id, 'net': money(r.get('settlement_amount') for r in group)} for id, group in grouped.items()]
+    # Stream selected rows once and parse each fee leaf once. Keep per-order
+    # Decimal summaries instead of retaining whole transaction JSON in memory.
+    grouped = {}; adjustments = []; transaction_count = 0
+    transaction_sum = Decimal(0); net_complete = True; all_fields = set()
+    for r in data.get('rows', []):
+        if r.get('currency') != currency:
+            continue
+        transaction_count += 1
+        net = decimal(r.get('settlement_amount'))
+        net_complete = net_complete and net is not None
+        if net is not None:transaction_sum += net
+        if r.get('type') != 'ORDER':
+            adjustments.append({'type': r.get('type'), 'order_id': r.get('adjustment_order_id'), 'amount': r.get('settlement_amount')})
+            continue
+        if not r.get('order_id'):
+            continue
+        group = grouped.setdefault(r['order_id'], {'count': 0, 'net': Decimal(0), 'known_net': 0,
+                                                  'revenue': Decimal(0), 'known_revenue': 0, 'fields': {}})
+        group['count'] += 1
+        if net is not None:
+            group['net'] += net; group['known_net'] += 1
+        revenue = decimal(r.get('revenue_amount'))
+        if revenue is not None:
+            group['revenue'] += revenue; group['known_revenue'] += 1
+        fields = expense_fields(r); all_fields.update(fields)
+        for field, value in fields.items():
+            total, known = group['fields'].get(field, (Decimal(0), 0))
+            group['fields'][field] = (total+decimal(value), known+1)
+    known = [{'order_id': id, 'net': format(g['net'], 'f') if g['known_net'] else None} for id, g in grouped.items()]
     def split(sign):
         rows = [r for r in known if decimal(r['net']) is not None and (1 if decimal(r['net']) > 0 else -1 if decimal(r['net']) < 0 else 0) == sign]
         return {'orders': len(rows), 'amount': money(r['net'] for r in rows) or '0'}
-    all_fields = sorted({field for r in order_tx for field in expense_fields(r)})
     expenses = []
-    for field in all_fields:
+    for field in sorted(all_fields):
         order_values = {}; has = []; no = []
         for id, group in grouped.items():
-            # Known zero only if the field is explicitly returned for every transaction.
-            values = [expense_fields(r).get(field) for r in group]
-            if any(v is None for v in values):
+            total, count = group['fields'].get(field, (Decimal(0), 0))
+            # A field is known only when returned for every transaction of an order.
+            if count != group['count']:
                 continue
-            value = money(values);order_values[id] = value
-            (has if decimal(value) != 0 else no).append(id)
+            value = format(total, 'f'); order_values[id] = value
+            (has if total != 0 else no).append(id)
         amount = money(order_values.values())
         if amount is None or decimal(amount) == 0:
             continue
-        revenues = [money(r.get('revenue_amount') for r in grouped[id]) for id in has]
+        revenues = [format(grouped[id]['revenue'], 'f') if grouped[id]['known_revenue'] else None for id in has]
         base = money(revenues) if all(v is not None for v in revenues) else None
         expenses.append({'id': field, 'name': FEE_NAMES.get(field.split('.')[-1], field.split('.')[-1].replace('_', ' ')), 'amount': amount,
                          'has_orders': len(has), 'no_orders': len(no), 'unknown_orders': len(grouped)-len(has)-len(no),
                          'base_revenue': base, 'share_pct': float(abs(decimal(amount))/decimal(base)*100) if decimal(base) not in (None, Decimal(0)) else None,
                          'order_ids': has, 'zero_order_ids': no})
+    statements = [r for r in data.get('statements', []) if r.get('currency') == currency]
     statement_sum = money(r.get('settlement_amount') for r in statements)
-    transaction_sum = money(r.get('settlement_amount') for r in tx) if all(decimal(r.get('settlement_amount')) is not None for r in tx) else None
+    transaction_sum = format(transaction_sum, 'f') if transaction_count and net_complete else None
     difference = format(decimal(statement_sum)-decimal(transaction_sum), 'f') if decimal(statement_sum) is not None and decimal(transaction_sum) is not None else None
-    return {'statement_count': len(statements), 'order_count': len(grouped), 'transaction_count': len(tx), 'transaction_net': transaction_sum, 'statement_transaction_difference': difference,
+    return {'statement_count': len(statements), 'order_count': len(grouped), 'transaction_count': transaction_count, 'transaction_net': transaction_sum, 'statement_transaction_difference': difference,
             'net_settlement': money(r.get('settlement_amount') for r in statements) or ('0' if not statements else None),
             'revenue': money(r.get('revenue_amount') for r in statements) or ('0' if not statements else None),
             'fees': money(r.get('fee_amount') for r in statements) or ('0' if not statements else None),
             'paid_statement_amount': money(r.get('settlement_amount') for r in statements if r.get('payment_status') == 'PAID') or '0',
             'statement_statuses': count_groups(r.get('payment_status') or 'UNKNOWN' for r in statements),
             'positive': split(1), 'zero': split(0), 'negative': split(-1), 'expenses': sorted(expenses, key=lambda r: -abs(decimal(r['amount']))),
-            'adjustments': [{'type': r.get('type'), 'order_id': r.get('adjustment_order_id'), 'amount': r.get('settlement_amount')} for r in tx if r.get('type') != 'ORDER'],
+            'adjustments': adjustments,
             'unknown_net_orders': sum(r['net'] is None for r in known), 'note': '按UTC账单生成日期筛选，订单可能创建于更早日期。正/零/负是本期订单结算流水净额，不是银行逐单到账；没有流水不能认定为未回款。费用保留平台原始正负号，正数可能是退费/补贴。'}
 
 
@@ -180,10 +202,12 @@ def aggregate_performance(data, currency):
 
 
 def period(workspace, shop, window):
-    snaps = {s: sources.snapshot(workspace, shop['id'], s, window) for s in sources.SOURCES}
+    snaps = {s: sources.snapshot(workspace, shop['id'], s, window, shop['timezone']) for s in sources.SOURCES}
     coverage = {s: {'status': 'complete' if snap and snap['complete'] else 'partial' if snap else 'missing', 'retrieved_at': snap.get('retrieved_at') if snap else None,
                     'evidence': snap.get('evidence', []) if snap else [], 'stale': bool(snap and time.time()-snap['retrieved_at'] > 600)} for s, snap in snaps.items()}
     for source, entry in coverage.items():
+        snap = snaps[source]
+        entry.update({k: snap[k] for k in ('storage', 'observed_days', 'total_days', 'missing_dates') if snap and k in snap})
         attempt = store.get(sources.key(workspace, shop['id'], source, window.start_date, window.end_date), 'analytics_attempt', workspace)
         entry['last_attempt'] = attempt
     def data(s):return snaps[s]['data'] if snaps[s] else None
@@ -249,7 +273,8 @@ def drilldown(workspace, window, shop_id, kind, field=None, zero=False, page=1, 
     elif kind not in ('orders', 'settlement'):
         raise ValueError('不支持的明细类型')
     start = (page-1)*page_size
-    return {'total': len(rows), 'page': page, 'page_size': page_size, 'rows': rows[start:start+page_size], 'coverage': 'missing' if not snap else 'complete' if snap['complete'] else 'partial'}
+    selected = rows.page(start, page_size) if hasattr(rows, 'page') else rows[start:start+page_size]
+    return {'total': len(rows), 'page': page, 'page_size': page_size, 'rows': selected, 'coverage': 'missing' if not snap else 'complete' if snap['complete'] else 'partial'}
 
 
 def re_field(value):
