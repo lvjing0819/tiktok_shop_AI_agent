@@ -73,8 +73,11 @@ async def request(workspace, shop_id, path, query, body=None):
         raise ValueError('未开放此数据源')
     cfg = api.config()
     encoded = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode() if body is not None else b''
+    refresh_token = False
+    refreshed = False
     for attempt in range(3):
-        tokens, generation = await api.access(workspace, cfg, force=attempt == 1)
+        tokens, generation = await api.access(workspace, cfg, force=refresh_token)
+        refresh_token = False
         current = api.connection(workspace)
         if not current or current['generation'] != generation or not current.get('sealed'):
             raise api.ShopError('连接发生变化，请重新同步')
@@ -87,12 +90,15 @@ async def request(workspace, shop_id, path, query, body=None):
             result = await api.request_json(api.API_ROOT + path, method='POST' if body is not None else 'GET', params=params, content=encoded or None,
                                             headers={'x-tts-access-token': tokens['access_token'], 'Content-Type': 'application/json'})
         except api.ShopAPIError as exc:
-            if exc.code == 105002 and attempt == 0:
+            if exc.code == 105002 and not refreshed and attempt < 2:
+                refresh_token = refreshed = True
                 continue
             raise
         except api.ShopError as exc:
-            if '429' in str(exc) and attempt < 2:
-                await asyncio.sleep(5 * (attempt + 1))
+            message = str(exc)
+            transient = message == 'TikTok Shop 网络或返回格式异常，请稍后重试' or bool(re.search(r'HTTP (429|500|502|503|504)\b', message))
+            if transient and attempt < 2:
+                await asyncio.sleep((5 if '429' in message else 2) * (attempt + 1))
                 continue
             raise
         with store.db() as conn:
@@ -199,20 +205,23 @@ async def fetch_source(workspace, shop, source, window, heartbeat=lambda: None):
             'schema_version': 1, 'evidence': refs, 'data': result}
 
 
-def enqueue(workspace, window):
+def enqueue(workspace, window, *, only_missing=False):
     selected = selected_shops(workspace, window)
     if not selected:
         raise ValueError('没有符合筛选条件的已授权店铺')
     if any(not s['timezone'] for s in selected):
         raise ValueError('该店铺需要先配置明确时区')
-    fingerprint = key(workspace, window.model_dump(mode='json'))
+    requested = [f"{s['id']}:{source}:{w.start_date}:{w.end_date}"
+                 for s in selected for w in (window, window.previous()) for source in SOURCES
+                 if not only_missing or snapshot(workspace, s['id'], source, w) is None]
+    fingerprint = key(workspace, window.model_dump(mode='json'), 'missing') if only_missing else key(workspace, window.model_dump(mode='json'))
     with store.db(write=True) as conn:
         rows = conn.execute(select(store.records.c.payload).where(store.records.c.kind == 'analytics_job', store.records.c.shop == workspace).with_for_update()).all()
         for row in rows:
             job = json.loads(row[0])
             if job.get('fingerprint') == fingerprint and job['status'] in ('queued', 'running'):
                 return public_job(job)
-        job = {'id': str(uuid4()), 'fingerprint': fingerprint, 'window': window.model_dump(mode='json'), 'shop_ids': [s['id'] for s in selected], 'status': 'queued', 'created_at': time.time(), 'lease_until': 0, 'completed': [], 'errors': [], 'partial_sources': [], 'total': len(selected)*len(SOURCES)*2}
+        job = {'id': str(uuid4()), 'fingerprint': fingerprint, 'window': window.model_dump(mode='json'), 'shop_ids': [s['id'] for s in selected], 'status': 'queued', 'created_at': time.time(), 'lease_until': 0, 'completed': [], 'errors': [], 'partial_sources': [], 'requested_sources': requested, 'total': len(requested)}
         store.put(conn, 'analytics_job', job, workspace)
     return public_job(job)
 
@@ -247,7 +256,7 @@ def process_one():
             for w in (window, window.previous()):
                 for source in SOURCES:
                     identity = f"{s['id']}:{source}:{w.start_date}:{w.end_date}"
-                    if identity in job['completed']:
+                    if identity in job['completed'] or ('requested_sources' in job and identity not in job['requested_sources']):
                         continue
                     job['active_source'] = {'shop': s['name'], 'source': source, 'start_date': str(w.start_date), 'end_date': str(w.end_date)};save()
                     try:
@@ -304,4 +313,4 @@ def ensure(workspace, window):
         attempt = store.get(key(workspace, entry['shop_id'], entry['source'], entry['start_date'], entry['end_date']), 'analytics_attempt', workspace)
         if attempt and attempt.get('status') == 'failed' and time.time() - attempt.get('attempted_at', 0) < 300:
             return {'job': None, 'missing': missing, 'reason': 'recent_failure', 'retry_after_seconds': max(1, int(300 - (time.time() - attempt['attempted_at'])))}
-    return {'job': enqueue(workspace, window), 'missing': missing, 'reason': 'enqueued'}
+    return {'job': enqueue(workspace, window, only_missing=True), 'missing': missing, 'reason': 'enqueued'}

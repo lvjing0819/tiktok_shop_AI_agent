@@ -167,3 +167,62 @@ def test_ensure_rollover_enqueues_new_window_and_cools_down_failed_sources(clien
     assert blocked['job'] is None and blocked['reason']=='recent_failure'
     assert store.list_records('analytics_job')==[]
     assert client.post('/api/analytics/ensure',json=shifted.model_dump(mode='json'),headers={'X-Shop-ID':'other'}).status_code==409
+
+
+def test_ensure_worker_fetches_only_missing_period_sources(client, monkeypatch):
+    for window in (WINDOW, WINDOW.previous()):
+        for source in s.SOURCES:
+            if window == WINDOW.previous() and source in ('orders', 'finance'):
+                continue
+            snapshot(source, {}, window)
+    calls = []
+    async def fetch(workspace, shop, source, window, heartbeat):
+        calls.append((source, window.start_date))
+        return {'id': s.key(workspace, shop['id'], source, window.start_date, window.end_date),
+                'shop_id': shop['id'], 'source': source, 'data': {}, 'complete': True,
+                'retrieved_at': time.time(), 'evidence': []}
+    monkeypatch.setattr(s, 'fetch_source', fetch)
+    job = s.ensure('default', WINDOW)['job']
+    assert job['total'] == 2
+    assert s.ensure('default', WINDOW)['job']['id'] == job['id']
+    assert s.process_one()
+    assert calls == [('orders', WINDOW.previous().start_date), ('finance', WINDOW.previous().start_date)]
+    assert store.get(job['id'], 'analytics_job')['status'] == 'completed'
+    assert s.ensure('default', WINDOW)['reason'] == 'ready'
+
+
+@pytest.mark.parametrize('failure', ['network', '503', '429', 'expired', 'denied', 'oversize', 'persistent'])
+def test_read_retry_is_bounded_and_refreshes_tokens_only_when_expired(client, monkeypatch, failure):
+    forces, calls = [], []
+    async def access(*args, force=False):
+        forces.append(force)
+        return {'access_token': 'test-token'}, 'generation'
+    async def remote(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1 or failure == 'persistent':
+            if failure in ('expired', 'denied'):
+                raise s.api.ShopAPIError(105002 if failure == 'expired' else 105005, 'test-request')
+            messages = {'network': 'TikTok Shop 网络或返回格式异常，请稍后重试',
+                        'persistent': 'TikTok Shop 网络或返回格式异常，请稍后重试',
+                        '503': 'TikTok Shop 服务返回 HTTP 503，请核对网络、应用和授权',
+                        '429': 'TikTok Shop 服务返回 HTTP 429，请核对网络、应用和授权',
+                        'oversize': 'TikTok Shop 返回数据过大'}
+            raise s.api.ShopError(messages[failure])
+        return {'data': {}}
+    async def no_sleep(*args):
+        pass
+    monkeypatch.setattr(s.api, 'config', lambda: {'app_key': 'test', 'app_secret': 'test'})
+    monkeypatch.setattr(s.api, 'access', access)
+    monkeypatch.setattr(s.api, 'connection', lambda workspace: {'generation': 'generation', 'sealed': 'test'})
+    monkeypatch.setattr(s.api, 'unseal', lambda *args: {'shops': [{'id': '1', 'cipher': 'test'}]})
+    monkeypatch.setattr(s.api, 'locked', lambda *args: None)
+    monkeypatch.setattr(s.api, 'request_json', remote)
+    monkeypatch.setattr(s.asyncio, 'sleep', no_sleep)
+    if failure in ('denied', 'oversize', 'persistent'):
+        with pytest.raises(s.api.ShopError):
+            asyncio.run(s.request('default', '1', '/order/202309/orders/search', {}, {}))
+        assert len(calls) == (3 if failure == 'persistent' else 1)
+    else:
+        assert asyncio.run(s.request('default', '1', '/order/202309/orders/search', {}, {})) == {'data': {}}
+        assert len(calls) == 2
+    assert forces == ([False, True] if failure == 'expired' else [False] * len(calls))

@@ -612,7 +612,7 @@ async function ensureData(g = generation) {
     (job && ["queued", "running"].includes(job.status))
   )
     return;
-  const key = query();
+  const key = `${g}:${query()}`;
   if (automaticRequests.has(key)) return;
   automaticRequests.add(key);
   try {
@@ -620,10 +620,7 @@ async function ensureData(g = generation) {
       method: "POST",
       body: JSON.stringify(params()),
     });
-    if (g !== generation) {
-      automaticRequests.delete(key);
-      return;
-    }
+    if (g !== generation) return;
     if (result.job) {
       job = result.job;
       displayedProgress = -1;
@@ -635,12 +632,13 @@ async function ensureData(g = generation) {
         true,
       );
   } catch (e) {
-    if (g !== generation) automaticRequests.delete(key);
     if (g === generation)
       status(
         "自动同步未完成：" + e.message + "。可点击“刷新真实数据”重试。",
         true,
       );
+  } finally {
+    automaticRequests.delete(key);
   }
 }
 async function load() {
@@ -718,7 +716,7 @@ async function poll(id, g) {
       const waiting =
         job.status === "queued" && Date.now() / 1000 - job.created_at > 30;
       status(
-        `数据同步 ${progress}/${job.total} · ${job.active_source ? job.active_source.shop + " / " + names[job.active_source.source] : "等待后台工作进程"}。已读取的数据正在逐项显示。${waiting ? "后台尚未领取，请确认后台进程已启动。" : ""}`,
+        `数据同步 ${progress}/${job.total} · ${job.active_source ? job.active_source.shop + " / " + names[job.active_source.source] : "等待后台工作进程"}。已读取的数据正在逐项显示。${waiting ? "任务正在排队；若持续没有进度，请检查后台进程。" : ""}`,
       );
       timer = setTimeout(() => poll(id, g), 2500);
       return;
@@ -763,7 +761,7 @@ function calendar() {
       const d = add(start, i),
         k = date(d),
         valid = d.getMonth() === month.getMonth();
-      html += `<button type="button" class="cal-day mono ${!valid ? "muted" : ""} ${d >= state.draftStart && d <= state.draftEnd ? "in-range" : ""} ${k === date(state.draftStart) ? "range-start" : ""} ${k === date(state.draftEnd) ? "range-end" : ""}" data-date="${k}" ${!valid || d > today ? "disabled" : ""}>${d.getDate()}</button>`;
+      html += `<button type="button" class="cal-day mono ${!valid ? "muted" : ""} ${d >= state.draftStart && d <= state.draftEnd ? "in-range" : ""} ${k === date(state.draftStart) ? "range-start" : ""} ${k === date(state.draftEnd) ? "range-end" : ""}" data-date="${k}" ${d > today || k < "2023-07-01" ? "disabled" : ""}>${d.getDate()}</button>`;
     }
     html += "</div></div>";
   }
@@ -903,6 +901,7 @@ $("openPickerBtn").onclick = (e) => {
   state.draftStart = state.start;
   state.draftEnd = state.end;
   state.first = true;
+  state.left = new Date(state.draftStart.getFullYear(), state.draftStart.getMonth(), 1);
   $("datePopover").classList.toggle("hidden");
   calendar();
 };
@@ -920,6 +919,7 @@ $("dualCalendars").onclick = (e) => {
   }
   const d = parse(b.dataset.date);
   if (!d) return;
+  document.querySelectorAll("[data-preset]").forEach((v) => v.classList.remove("active"));
   if (state.first) {
     state.draftStart = d;
     state.draftEnd = d;
@@ -939,6 +939,8 @@ document.querySelectorAll("[data-preset]").forEach(
         state.draftEnd,
         p === "last7" ? -6 : p === "last30" ? -29 : 0,
       );
+      state.first = true;
+      state.left = new Date(state.draftStart.getFullYear(), state.draftStart.getMonth(), 1);
       document
         .querySelectorAll("[data-preset]")
         .forEach((v) => v.classList.toggle("active", v === b));
@@ -962,8 +964,13 @@ $("resetDefaultBtn").onclick = () => {
   commit(today, today);
 };
 document.addEventListener("click", (e) => {
-  if (!$("dateStripWrap").contains(e.target))
+  // The day/month handler redraws its button before this event bubbles here.
+  // Use the original event path, since the old button is no longer contained.
+  if (!e.composedPath().includes($("dateStripWrap")))
     $("datePopover").classList.add("hidden");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") $("datePopover").classList.add("hidden");
 });
 document.querySelectorAll("#viewModeGroup button").forEach(
   (b) =>
