@@ -25,6 +25,10 @@ def router(scope):
     def dashboard(filters=Depends(window), workspace=Depends(scope)):
         try:return a.report(workspace, filters)
         except shop_api.ShopError as e:raise HTTPException(409, str(e))
+    @r.post('/api/analytics/ensure')
+    def ensure(body: s.Window, workspace=Depends(scope)):
+        try:return s.ensure(workspace, body)
+        except (ValueError, shop_api.ShopError) as e:raise HTTPException(409, str(e))
     @r.post('/api/analytics/refresh', status_code=202)
     def refresh(body: s.Window, workspace=Depends(scope)):
         try:return s.enqueue(workspace, body)

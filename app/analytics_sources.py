@@ -276,3 +276,32 @@ def process_one():
     job.update(finished_at=time.time(), active_source=None)
     save()
     return True
+
+
+def ensure(workspace, window):
+    """Reuse an active refresh, or enqueue missing windows once; never fabricate data."""
+    selected = selected_shops(workspace, window)
+    if not selected:
+        raise ValueError('没有符合筛选条件的已授权店铺')
+    selected_ids = {s['id'] for s in selected}
+    active = [j for j in store.list_records('analytics_job', workspace)
+              if j['status'] in ('queued', 'running')
+              and j['window']['start_date'] == str(window.start_date)
+              and j['window']['end_date'] == str(window.end_date)
+              and selected_ids.issubset(set(j['shop_ids']))]
+    missing = []
+    for shop in selected:
+        for label, period in (('current', window), ('previous', window.previous())):
+            for source in SOURCES:
+                if snapshot(workspace, shop['id'], source, period) is None:
+                    missing.append({'shop_id': shop['id'], 'source': source, 'period': label,
+                                    'start_date': str(period.start_date), 'end_date': str(period.end_date)})
+    if active:
+        return {'job': public_job(min(active, key=lambda j: j['created_at'])), 'missing': missing, 'reason': 'running'}
+    if not missing:
+        return {'job': None, 'missing': [], 'reason': 'ready'}
+    for entry in missing:
+        attempt = store.get(key(workspace, entry['shop_id'], entry['source'], entry['start_date'], entry['end_date']), 'analytics_attempt', workspace)
+        if attempt and attempt.get('status') == 'failed' and time.time() - attempt.get('attempted_at', 0) < 300:
+            return {'job': None, 'missing': missing, 'reason': 'recent_failure', 'retry_after_seconds': max(1, int(300 - (time.time() - attempt['attempted_at'])))}
+    return {'job': enqueue(workspace, window), 'missing': missing, 'reason': 'enqueued'}

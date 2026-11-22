@@ -56,7 +56,10 @@ export function initializeHub({ json, resizeCharts }) {
     const url = new URL(location.href);
     url.searchParams.set("view", value);
     history.replaceState(null, "", url);
-    if (value === "dashboard") requestAnimationFrame(resizeCharts);
+    if (value === "dashboard") {
+      requestAnimationFrame(resizeCharts);
+      window.dispatchEvent(new Event("abrain:dashboard-visible"));
+    }
   }
   function append(role, value) {
     const row = document.createElement("div");
@@ -302,11 +305,18 @@ export function initializeHub({ json, resizeCharts }) {
     ["toggleExtendedBtn", "extendedDimensionsPanel", "维度明细"],
     ["toggleAiPanelBtn", "aiQaPanel", "AI 问答"],
   ]) {
-    $(button).setAttribute("aria-expanded", "false");
+    const initiallyOpen =
+      panel === "extendedDimensionsPanel" &&
+      localStorage.getItem("abrain:dimensions-open") !== "false";
+    $(panel).classList.toggle("hidden", !initiallyOpen);
+    $(button).textContent = (initiallyOpen ? "收起" : "展开") + label;
+    $(button).setAttribute("aria-expanded", String(initiallyOpen));
     $(button).onclick = () => {
       const hidden = $(panel).classList.toggle("hidden");
       $(button).textContent = (hidden ? "展开" : "收起") + label;
       $(button).setAttribute("aria-expanded", String(!hidden));
+      if (panel === "extendedDimensionsPanel")
+        localStorage.setItem("abrain:dimensions-open", String(!hidden));
       if (!hidden) requestAnimationFrame(resizeCharts);
     };
   }

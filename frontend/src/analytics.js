@@ -66,6 +66,8 @@ let shops = [],
   detail = null,
   detailVersion = 0;
 const charts = {};
+const automaticRequests = new Set();
+let displayedProgress = -1;
 const names = {
   orders: "订单与省州",
   finance: "结算与费用",
@@ -214,8 +216,10 @@ function coverage() {
     "</div>";
 }
 function render() {
-  $("startDateInput").value = date(state.start).replaceAll("-", "/");
-  $("endDateInput").value = date(state.end).replaceAll("-", "/");
+  if (document.activeElement !== $("startDateInput"))
+    $("startDateInput").value = date(state.start).replaceAll("-", "/");
+  if (document.activeElement !== $("endDateInput"))
+    $("endDateInput").value = date(state.end).replaceAll("-", "/");
   text(
     "compareRangeText",
     report
@@ -227,6 +231,7 @@ function render() {
     `${date(state.start)} — ${date(state.end)} · ${current()?.shop.timezone || "各店铺当地时间"} · 对比前一等长周期`,
   );
   coverage();
+  sourceSummary();
   comparison();
   const r = current();
   document.querySelector('#viewModeGroup [data-mode="detail"]').disabled = !r;
@@ -361,7 +366,11 @@ function render() {
   const peak = o ? Math.max(...o.hours) : 0;
   text(
     "peakHourBadge",
-    peak ? `峰值 ${o.hours.indexOf(peak)}:00 · ${peak} 单` : "当前没有下单记录",
+    !o
+      ? "下单时段尚未读取"
+      : peak
+        ? `峰值 ${o.hours.indexOf(peak)}:00 · ${peak} 单`
+        : "当前没有下单记录",
   );
   chart(
     "channelChart",
@@ -565,29 +574,97 @@ function insights() {
     .join("");
   text("aiContextBadge", `${r.shop.region} · ${r.shop.name}`);
 }
+function sourceSummary() {
+  const entries = report?.shops || [];
+  $("sourceSummary").innerHTML = entries
+    .map((row) => {
+      const ready = Object.values(row.current.coverage).filter(
+        (c) => c.status !== "missing",
+      ).length;
+      const previous = Object.values(row.previous.coverage).filter(
+        (c) => c.status !== "missing",
+      ).length;
+      return `<div class="source-summary-shop"><strong>${esc(row.shop.name)}</strong><span>本期已读取 ${ready}/5 · 对比期 ${previous}/5</span><div class="source-chips">${Object.entries(
+        row.current.coverage,
+      )
+        .map(
+          ([source, c]) =>
+            `<span class="source-chip ${c.status}" title="${c.retrieved_at ? esc(new Date(c.retrieved_at * 1000).toLocaleString("zh-CN")) : "该日期尚未获取"}">${names[source]} · ${statuses[c.status]}</span>`,
+        )
+        .join("")}</div></div>`;
+    })
+    .join("");
+}
+function missingData(value) {
+  return value?.shops.some((row) =>
+    ["current", "previous"].some((period) =>
+      Object.values(row[period].coverage).some((c) => c.status === "missing"),
+    ),
+  );
+}
+function dashboardVisible() {
+  return !$("dashboardView").classList.contains("hidden");
+}
+async function ensureData(g = generation) {
+  if (
+    !shops.length ||
+    !dashboardVisible() ||
+    (job && ["queued", "running"].includes(job.status))
+  )
+    return;
+  const key = query();
+  if (automaticRequests.has(key)) return;
+  automaticRequests.add(key);
+  try {
+    const result = await json("/api/analytics/ensure", {
+      method: "POST",
+      body: JSON.stringify(params()),
+    });
+    if (g !== generation) {
+      automaticRequests.delete(key);
+      return;
+    }
+    if (result.job) {
+      job = result.job;
+      displayedProgress = -1;
+      $("refreshDataBtn").disabled = true;
+      void poll(job.id, g);
+    } else if (result.reason === "recent_failure")
+      status(
+        "部分来源最近同步失败。当前保留已获取数据，请检查来源状态，或点击“刷新真实数据”重试。",
+        true,
+      );
+  } catch (e) {
+    if (g !== generation) automaticRequests.delete(key);
+    if (g === generation)
+      status(
+        "自动同步未完成：" + e.message + "。可点击“刷新真实数据”重试。",
+        true,
+      );
+  }
+}
 async function load() {
   const g = ++generation;
   controller?.abort();
   controller = new AbortController();
   clearTimeout(timer);
   job = null;
+  displayedProgress = -1;
   $("refreshDataBtn").disabled = false;
   $("detailView").setAttribute("aria-busy", "true");
   $("aiChatLog").replaceChildren();
-  status("正在读取所选周期的真实快照…");
+  status("正在读取所选日期的数据…");
   try {
-    const d = await json("/api/analytics/dashboard?" + query(), {
+    const value = await json("/api/analytics/dashboard?" + query(), {
       signal: controller.signal,
     });
     if (g !== generation) return;
-    report = d;
+    report = value;
     render();
-    if (
-      d.shops.some((r) =>
-        Object.values(r.current.coverage).some((v) => v.status === "missing"),
-      )
-    )
-      status("当前周期部分来源尚未同步，点击“刷新真实数据”获取本期及对比期。");
+    if (missingData(value))
+      status(
+        "所选日期有数据尚未读取，进入看板后自动同步；已获取的来源会先显示。",
+      );
   } catch (e) {
     if (e.name !== "AbortError" && g === generation) {
       report = null;
@@ -596,7 +673,10 @@ async function load() {
       status(e.message, true);
     }
   } finally {
-    if (g === generation) $("detailView").setAttribute("aria-busy", "false");
+    if (g === generation) {
+      $("detailView").setAttribute("aria-busy", "false");
+      void ensureData(g);
+    }
   }
 }
 async function refresh() {
@@ -604,42 +684,69 @@ async function refresh() {
   const g = generation;
   $("refreshDataBtn").disabled = true;
   try {
-    job = await json("/api/analytics/refresh", {
+    const value = await json("/api/analytics/refresh", {
       method: "POST",
       body: JSON.stringify(params()),
     });
-    poll(job.id, g);
+    if (g !== generation) return;
+    job = value;
+    displayedProgress = -1;
+    void poll(job.id, g);
   } catch (e) {
-    status(e.message, true);
-    $("refreshDataBtn").disabled = false;
+    if (g === generation) {
+      status(e.message, true);
+      $("refreshDataBtn").disabled = false;
+    }
   }
 }
 async function poll(id, g) {
   if (g !== generation) return;
   try {
-    job = await json("/api/analytics/refresh/" + id);
+    const value = await json("/api/analytics/refresh/" + id);
     if (g !== generation) return;
-    status(
-      `真实数据同步 ${job.progress || 0}/${job.total} · ${job.active_source ? job.active_source.shop + " / " + names[job.active_source.source] : "等待后台工作进程"}`,
-    );
-    if (["queued", "running"].includes(job.status)) {
+    job = value;
+    const running = ["queued", "running"].includes(job.status);
+    const progress = job.progress || 0;
+    if (displayedProgress !== progress || !running) {
+      const snapshot = await json("/api/analytics/dashboard?" + query());
+      if (g !== generation) return;
+      report = snapshot;
+      displayedProgress = progress;
+      render();
+    }
+    if (running) {
+      const waiting =
+        job.status === "queued" && Date.now() / 1000 - job.created_at > 30;
+      status(
+        `数据同步 ${progress}/${job.total} · ${job.active_source ? job.active_source.shop + " / " + names[job.active_source.source] : "等待后台工作进程"}。已读取的数据正在逐项显示。${waiting ? "后台尚未领取，请确认后台进程已启动。" : ""}`,
+      );
       timer = setTimeout(() => poll(id, g), 2500);
       return;
     }
     $("refreshDataBtn").disabled = false;
-    report = await json("/api/analytics/dashboard?" + query());
-    if (g !== generation) return;
-    render();
     if (job.status === "failed")
-      status("同步任务失败，请查看后台连接并重试。", true);
+      status("同步任务失败，已保留成功读取的数据，请检查连接后重试。", true);
     else if (job.errors?.length)
       status(
-        `同步结束，${job.errors.length} 个来源/周期失败，已保留旧快照。请查看来源状态并重试。`,
+        `同步结束，${job.errors.length} 个来源/日期失败，其余数据已显示。请查看来源状态后重试。`,
         true,
       );
+    else if (job.partial_sources?.length)
+      status(
+        "同步已结束，部分来源尚未完成分页。请缩小日期范围或查看来源完整性。",
+        true,
+      );
+    else
+      status(
+        "本期与对比期数据同步完成。下方可查看费用、SKU、地区、状态、时段、渠道及达人明细。",
+      );
   } catch (e) {
-    status(e.message, true);
-    $("refreshDataBtn").disabled = false;
+    if (g === generation) {
+      status(e.message + "。已获取的数据仍然保留，可点击刷新重试。", true);
+      job = null;
+      displayedProgress = -1;
+      $("refreshDataBtn").disabled = false;
+    }
   }
 }
 function calendar() {
@@ -928,6 +1035,10 @@ $("exportCsvBtn").onclick = async () => {
     status(e.message, true);
   }
 };
+window.addEventListener("abrain:dashboard-visible", () => {
+  void ensureData(generation);
+});
+
 initializeHub({
   json,
   resizeCharts: () => Object.values(charts).forEach((chart) => chart.resize()),
@@ -943,6 +1054,7 @@ setInterval(async () => {
     if (g === generation) {
       report = d;
       render();
+      if (missingData(d)) void ensureData(g);
     }
   } catch {
     /* keep the visible snapshot */
