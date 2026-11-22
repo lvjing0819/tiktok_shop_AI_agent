@@ -105,6 +105,21 @@ def test_pagination_completeness_and_stale_cursor(monkeypatch):
     assert not r['complete'] and len(r['data']['rows'])==1
 
 
+@pytest.mark.parametrize('terminal_total,valid', [(2, True), (3, False), (None, False)])
+def test_terminal_page_without_list_requires_confirmed_total(monkeypatch, terminal_total, valid):
+    async def request(workspace,shop,path,query,body=None):
+        if not query.get('page_token'):
+            return {'data': {'videos': [{'id': 'a'}, {'id': 'b'}], 'total_count': 2, 'next_page_token': 'last'}}
+        return {'data': {'total_count': terminal_total, 'next_page_token': ''}}
+    monkeypatch.setattr(s,'request',request)
+    if valid:
+        result=asyncio.run(s.fetch_source('default',SHOP,'videos',WINDOW))
+        assert result['complete'] and len(result['data']['rows'])==2
+    else:
+        with pytest.raises(s.api.ShopError):
+            asyncio.run(s.fetch_source('default',SHOP,'videos',WINDOW))
+
+
 def test_ai_summary_excludes_order_ids_and_buyer_data(client,monkeypatch):
     snapshot('orders',{'rows':[{'id':'private-order-123','paid_time':1,'status':'DELIVERED','payment':{'currency':'MYR','total_amount':'20'},'line_items':[{'sku_id':'s1','seller_sku':'SKU-1'}]}]})
     snapshot('finance',{'rows':[tx('tx1','private-order-123','10','-2')],'statements':[]})

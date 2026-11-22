@@ -144,6 +144,14 @@ async def fetch_source(workspace, shop, source, window, heartbeat=lambda: None, 
             page = data.get(field)
             if page is None and data.get('total_count') == 0:
                 page = []
+            # TikTok may issue an extra cursor at an exact page-size multiple,
+            # then omit the list on the terminal page while retaining the total.
+            # Accept it only when the already collected count proves completeness.
+            collected = sum(len(r.get('skus', [])) for r in rows) if source == 'affiliate' else len(rows)
+            if (page is None and token and not data.get('next_page_token')
+                    and isinstance(data.get('total_count'), int)
+                    and data['total_count'] == collected and total == collected):
+                page = []
             if not isinstance(page, list):
                 raise api.ShopError('数据源未返回有效列表，不能视为空结果')
             for row in page:
