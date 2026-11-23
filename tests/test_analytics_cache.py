@@ -49,7 +49,7 @@ def test_overlap_subranges_deduplicate_update_and_are_locally_queryable(monkeypa
     assert 'rows' not in persisted['data']
     assert s.snapshot('other', '1', 'orders', inside, SHOP['timezone']) is None
     job = s.ensure('default', inside)['job']
-    assert all(u['source'] != 'orders' for u in store.get(job['id'], 'analytics_job')['units'])
+    assert all(u['source'] != 'orders' or u['period']=='year_ago' for u in store.get(job['id'], 'analytics_job')['units'])
     # Ordinary drilldown performs LIMIT/OFFSET in SQL, not full-history loading.
     details = a.drilldown('default', W, '1', 'orders', None, False, 2, 1)
     assert details['total'] == 2 and details['rows'][0]['id'] == 'b'

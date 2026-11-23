@@ -55,17 +55,21 @@ def router(scope):
         facts = {'window': report['window'], 'previous_window': report['previous_window'], 'shops': [], 'notes': report['notes'], 'capabilities': report['capabilities']}
         evidence = []
         for row in report['shops'][:10]:
-            p = row['current'];prev = row['previous']
+            p = row['current'];prev = row['previous'];year = row['year_ago']
             fact = {'shop': row['shop'], 'orders': p['orders'], 'finance': p['finance'], 'affiliate': p['affiliate'], 'performance': p['performance'],
                     'previous_orders': prev['orders'], 'previous_finance': prev['finance'],
+                    'year_ago_orders': year['orders'], 'year_ago_finance': year['finance'],
+                    'year_ago_window': report['year_ago_window'],
                     'coverage': {k: {f:v for f,v in c.items() if f != 'evidence'} for k,c in p['coverage'].items()},
-                    'previous_coverage': {k: {f:v for f,v in c.items() if f != 'evidence'} for k,c in prev['coverage'].items()}}
+                    'previous_coverage': {k: {f:v for f,v in c.items() if f != 'evidence'} for k,c in prev['coverage'].items()},
+                    'year_ago_coverage': {k: {f:v for f,v in c.items() if f != 'evidence'} for k,c in year['coverage'].items()}}
             # Only aggregate measures leave this process: no order IDs, addresses,
             # authorization material or buyer identities. Cap all long arrays.
-            for period in ('orders', 'previous_orders'):
+            for period in ('orders', 'previous_orders', 'year_ago_orders'):
                 if fact[period]:fact[period]['skus'] = fact[period]['skus'][:15]
-            for period in ('finance', 'previous_finance'):
+            for period in ('finance', 'previous_finance', 'year_ago_finance'):
                 if fact[period]:
+                    fact[period].pop('expense_values', None)  # Internal zero-field alignment is not needed in the model prompt.
                     fact[period]['expenses'] = [{k:v for k,v in exp.items() if k not in ('order_ids', 'zero_order_ids')} for exp in fact[period]['expenses'][:20]]
                     fact[period]['adjustments'] = [{'type': v['type'], 'amount': v['amount']} for v in fact[period]['adjustments'][:10]]
             if fact['affiliate']:fact['affiliate']['creators'] = fact['affiliate']['creators'][:15]

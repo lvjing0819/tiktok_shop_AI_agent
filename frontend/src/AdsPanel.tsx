@@ -1,3 +1,4 @@
+import { MetricHelp, MetricScope, DeltaPair } from "./MetricGuide";
 import { useEffect, useState } from "react";
 
 type Api = (path: string, body?: unknown, method?: string) => Promise<any>;
@@ -18,6 +19,8 @@ type Report = {
   evidence?: unknown[];
   limitations?: string[];
   tool_calls: number;
+  comparison_windows?: any;
+  metric_comparisons?: any[];
 };
 function localDate(offset: number) {
   const d = new Date();
@@ -311,7 +314,11 @@ export default function AdsPanel({
               删除报告
             </button>
           </div>
-          <pre>{report.answer}</pre>
+          <MetricScope.Provider value={{context:{window:report.comparison_windows?.current,previous_window:report.comparison_windows?.previous,year_ago_window:report.comparison_windows?.year_ago}}}>
+          <p>广告账户：{report.advertiser_id} · 本期：{report.start_date} — {report.end_date}</p>
+          <MetricHelp id="ads.report" showComparison={!report.metric_comparisons?.length}/>
+          {!!report.metric_comparisons?.length && <div className="table-scroll"><table><thead><tr><th>工具返回维度</th><th>指标</th><th>本期原值</th><th>环比 / 同比</th><th>证据</th></tr></thead><tbody>{report.metric_comparisons.map((value,index)=><tr key={index}><td>{JSON.stringify(value.dimensions)}</td><td>{value.label}<MetricHelp id={value.definition} comparison={value}/></td><td>{value.value}</td><td><DeltaPair comparison={value}/></td><td>{value.evidence.join(' / ')}</td></tr>)}</tbody></table></div>}
+          <pre>{report.answer}</pre></MetricScope.Provider>
           <p>工具调用 {report.tool_calls} 次；未执行广告修改。</p>
           <ul>
             {report.limitations?.map((x) => (

@@ -1,6 +1,7 @@
 import Chart from "chart.js/auto";
 import "./abrain.css";
 import { initializeHub } from "./hub.js";
+import { annotateMetric, metricCellHtml, metricDefinitionHtml, comparisonHtml, dimensionTableHtml, pageGuideHtml } from "./metricDisplay.js";
 Chart.defaults.color = "#aeb7c7";
 Chart.defaults.borderColor = "rgba(255,255,255,.09)";
 const $ = (id) => document.getElementById(id);
@@ -122,6 +123,15 @@ function chart(id, type, rows, label, opts = {}) {
   charts[id]?.destroy();
   const canvas = $(id),
     box = canvas.parentElement;
+  const prefixes = {regionChart:"dimension|regions|",orderStatusChart:"dimension|statuses|",unsignedReasonChart:"dimension|cancellation_reasons|",hourChart:"dimension|hours|",channelChart:"channel|"};
+  let entries=Object.entries(current()?.comparisons || {}).filter(([key])=>prefixes[id] && key.startsWith(prefixes[id])).map(([,value])=>value);
+  if(id === "compareChart")entries=(report?.shops || []).map(row=>row.comparisons?.["orders.total"]?{...row.comparisons["orders.total"],label:row.shop.name}:null).filter(Boolean);
+  if(id === "expenseChart" && state.expense) entries=["has_orders","no_orders","unknown_orders"].map(field=>current()?.comparisons?.[`expense|${state.expense}|${field}`]).filter(Boolean);
+  let panel=box.parentElement.querySelector(`[data-chart-comparisons="${id}"]`);
+  if(!panel){panel=document.createElement("div");panel.dataset.chartComparisons=id;box.insertAdjacentElement("afterend",panel);}
+  const expanded=panel.querySelector("details")?.open;
+  panel.innerHTML=entries.length?dimensionTableHtml(entries,report):"";
+  if(expanded && panel.querySelector("details"))panel.querySelector("details").open=true;
   box.querySelector(".chart-empty")?.remove();
   canvas.hidden = !rows.length;
   if (!rows.length) {
@@ -156,13 +166,17 @@ function chart(id, type, rows, label, opts = {}) {
           tension: 0.25,
           pointRadius: 2,
         },
+      ...((type === "bar" || type === "line") && entries.length ? [["前一周期","previous","#d8ac70"],["去年同期","year_ago","#a895e8"]].map(([title,key,color])=>({
+        label:title,data:rows.map(row=>{const e=entries.find(v=>v.label === row.label);const v=e?.[key];return v?.baseline != null && !["missing_baseline","partial_baseline"].includes(v.status)?Number(v.baseline):null;}),
+        backgroundColor:color,borderColor:color,borderWidth:2,borderRadius:4,pointRadius:2,tension:.25,
+      })) : []),
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      plugins: { legend: { display: type === "doughnut", position: "bottom" } },
+      plugins: { legend: { display: type === "doughnut" || entries.length > 0, position: "bottom" } },
       ...(type === "doughnut"
         ? {}
         : {
@@ -207,16 +221,48 @@ function filters() {
 function coverage() {
   let cards = "";
   for (const r of report?.shops || [])
-    for (const period of ["current", "previous"])
-      for (const [s, c] of Object.entries(r[period].coverage)) {
-        cards += `<div class="coverage-item"><strong>${esc(r.shop.name)} · ${period === "current" ? "本期" : "对比期"}</strong><br>${names[s]}：${statuses[c.status]}${c.stale ? " · 可刷新" : ""}<br>${c.retrieved_at ? new Date(c.retrieved_at * 1000).toLocaleString("zh-CN") : "未获取"}<br>来源请求 ${c.evidence.length} 次${c.last_attempt?.status === "failed" ? `<br><strong>最近刷新失败${c.last_attempt.platform_code ? "（平台码 " + c.last_attempt.platform_code + "）" : ""}，当前保留上次成功快照</strong>` : ""}</div>`;
+    for (const period of ["current", "previous", "year_ago"])
+      for (const [s, c] of Object.entries(r[period]?.coverage || {})) {
+        cards += `<div class="coverage-item"><strong>${esc(r.shop.name)} · ${period === "current" ? "本期" : period === "previous" ? "对比期" : "去年同期"}</strong><br>${names[s]}：${statuses[c.status]}${c.stale ? " · 可刷新" : ""}<br>${c.retrieved_at ? new Date(c.retrieved_at * 1000).toLocaleString("zh-CN") : "未获取"}<br>来源请求 ${c.evidence.length} 次${c.last_attempt?.status === "failed" ? `<br><strong>最近刷新失败${c.last_attempt.platform_code ? "（平台码 " + c.last_attempt.platform_code + "）" : ""}，当前保留上次成功快照</strong>` : ""}</div>`;
       }
   $("coverageContent").innerHTML =
     '<p class="source-note">订单按店铺当地创建日期；结算按UTC账单生成日期；渠道按平台支付期。未知不补0，金额保留原币。</p><div class="coverage-grid">' +
     cards +
     "</div>";
 }
+function metricInline(key, definition) {
+  return metricCellHtml(current()?.comparisons?.[key], definition, {...report,instance:key});
+}
+function metricAnnotations() {
+  const definitions = {
+    kpiTotalOrders:["orders.total"],kpiDeliveredOrders:["orders.delivered"],kpiDeliveredRate:["orders.delivered_rate"],kpiInTransit:["orders.in_transit"],
+    kpiUnsignedOrders:["orders.cancelled"],kpiUnsignedRate:["orders.cancelled_rate"],kpiGmvAov:["performance.gmv","performance.avg_order_value"],
+    kpiCreatorCommTotal:["affiliate.actual_total"],kpiCreatorCommSplit:["affiliate.actual_std","affiliate.actual_ads"],
+    netSettlementVal:["finance.net_settlement"],revAndFeeVal:["finance.revenue","finance.fees"],revAndFeeCompare:["finance.statement_transaction_difference"],
+    abnormalSettleVal:["finance.paid_statement_amount"],settledBadge:["finance.statement_count","finance.order_count"],unpaidPlusNegTotal:["finance.adjustment_count"],
+    totalExpenseSumLabel:["finance.expense_field_count"],regionTotalBadge:["orders.total"],unsignedBadge:["orders.cancelled"],
+  };
+  for(const [prefix,kind] of [["normal","positive"],["unpaid","zero"],["neg","negative"]]){
+    definitions[prefix+"PayoutCount"]=[`finance.${kind}.orders`];definitions[prefix+"PayoutAmt"]=[`finance.${kind}.amount`];definitions[prefix+"PayoutPct"]=[`finance.${kind}.share`];
+  }
+  if(state.expense){for(const [id,field] of [["inspHasCount","has_orders"],["inspNoCount","no_orders"],["inspShareRatio","share_pct"]])definitions[id]=[`expense|${state.expense}|${field}`];}
+  for(const [id,keys] of Object.entries(definitions))annotateMetric($(id),keys,report,current()?.comparisons);
+  let guide=$("analyticsMetricGuide");if(!guide){guide=document.createElement("div");guide.id="analyticsMetricGuide";$("dataStatus").insertAdjacentElement("beforebegin",guide);guide.innerHTML=pageGuideHtml("analytics");}
+  let ranges=$("metricPeriodRanges");if(!ranges){ranges=document.createElement("div");ranges.id="metricPeriodRanges";ranges.className="metric-range-strip";guide.append(ranges);}
+  ranges.textContent=`环比：${report?.previous_window.start_date} — ${report?.previous_window.end_date} · 同比：${report?.year_ago_window?.start_date || "未提供"} — ${report?.year_ago_window?.end_date || "未提供"} · 比例变化用百分点，费用按金额规模比较。${(current()?.comparison_warnings || []).join(" ")}`;
+  const headerDefinitions={"本周期销量":"sku.units","上周期销量":"sku.units","变化幅度":"sku.units","视频数据联动":"sku.product_video_count","排名":"rank","联盟订单 / 件数":"creator.orders","已知实际佣金基数":"creator.actual_base","已结算计佣销售额":"creator.actual_base","标准佣金":"creator.actual_std","广告佣金":"creator.actual_ads","佣金合计":"creator.actual_total","已结算订单数":"finance.order_count","总结算金额":"finance.net_settlement","取消率":"orders.cancelled_rate","达人标准佣金":"affiliate.actual_std","达人广告佣金":"affiliate.actual_ads"};
+  for(const th of document.querySelectorAll("#dashboardView th")){
+    const label=th.dataset.metricLabel || th.textContent.trim();th.dataset.metricLabel=label;
+    if(headerDefinitions[label])th.innerHTML=esc(label === "已知实际佣金基数" ? "已结算计佣销售额" : label)+metricDefinitionHtml(headerDefinitions[label],report);
+  }
+}
+function definitionIdentity(node) {
+  const owner=node.closest("[data-metric-instance],[data-metric-key],[data-metric-for]");
+  return [node.dataset.definition,owner?.dataset.metricInstance || owner?.dataset.metricKey || owner?.dataset.metricFor || node.closest("th")?.dataset.metricLabel,node.closest("[data-shop]")?.dataset.shop,node.closest("[data-chart-comparisons]")?.dataset.chartComparisons].join("::");
+}
 function render() {
+  const expandedDefinitions=new Set([...document.querySelectorAll("#dashboardView .metric-definition[open]")].map(definitionIdentity));
+  const restoreDefinitions=()=>{for(const node of document.querySelectorAll("#dashboardView .metric-definition"))if(expandedDefinitions.has(definitionIdentity(node)))node.open=true;};
   if (document.activeElement !== $("startDateInput"))
     $("startDateInput").value = date(state.start).replaceAll("-", "/");
   if (document.activeElement !== $("endDateInput"))
@@ -238,6 +284,7 @@ function render() {
   document.querySelector('#viewModeGroup [data-mode="detail"]').disabled = !r;
   if (!r) {
     view("compare");
+    restoreDefinitions();
     status(
       report?.shops.length
         ? "已按店铺原币展示横向对比，跨币种金额不相加。点击店铺行查看明细。"
@@ -301,7 +348,7 @@ function render() {
   text("netSettlementVal", money(f?.net_settlement, c));
   text(
     "netSettlementCompare",
-    `上期 ${money(b.finance?.net_settlement, c)} · ${pct(change(f?.net_settlement, b.finance?.net_settlement))}`,
+    `上期 ${money(b.finance?.net_settlement, c)}；完整性与增长率见指标旁`,
   );
   text("revAndFeeVal", `${money(f?.revenue, c)} / ${money(f?.fees, c)}`);
   text(
@@ -332,7 +379,7 @@ function render() {
     ? expenses
         .map((e) => {
           const prev = b.finance?.expenses.find((v) => v.id === e.id);
-          return `<button type="button" class="expense-item ${e.id === state.expense ? "active" : ""}" data-expense="${esc(e.id)}" style="width:100%;text-align:left"><div class="expense-top"><span><span class="expense-name">${esc(e.name)}</span><span class="expense-field mono">${esc(e.id)}</span></span><span class="mono">${money(e.amount, c)}<br><small>${pct(change(e.amount, prev?.amount))}</small></span></div><div class="expense-meta-mini"><span>非零 ${e.has_orders} 单 / 明确零 ${e.no_orders} 单 / 未知 ${e.unknown_orders} 单</span></div></button>`;
+          return `<div class="expense-metric-group"><button type="button" class="expense-item ${e.id === state.expense ? "active" : ""}" data-expense="${esc(e.id)}" style="width:100%;text-align:left"><div class="expense-top"><span><span class="expense-name">${esc(e.name)}</span><span class="expense-field mono">${esc(e.id)}</span></span><span class="mono">${money(e.amount, c)}</span></div><div class="expense-meta-mini"><span>非零 ${e.has_orders} 单 / 明确零 ${e.no_orders} 单 / 未知 ${e.unknown_orders} 单</span></div></button><div class="metric-annotation">${metricInline(`expense|${e.id}|amount`,"expense.amount")}<details class="dimension-comparisons"><summary>订单数及营收占比的环比 / 同比</summary>${["has_orders","no_orders","unknown_orders","share_pct"].map(field=>`<div class="metric-annotation-row"><span>${esc(current()?.comparisons?.[`expense|${e.id}|${field}`]?.label || field)}</span>${metricInline(`expense|${e.id}|${field}`,`expense.${field}`)}</div>`).join("")}</details></div></div>`;
         })
         .join("")
     : '<p class="empty-data">暂无非零费用明细；未同步不代表费用为零。</p>';
@@ -384,6 +431,8 @@ function render() {
     `平台截至 ${p.performance?.latest_available_date || "未返回"}`,
   );
   insights();
+  metricAnnotations();
+  restoreDefinitions();
   if (!job || !["queued", "running"].includes(job.status))
     status(
       `已读取 ${r.shop.name} 的真实快照。${Object.values(p.coverage).some((v) => v.status !== "complete") ? "部分来源未同步或不完整，请查看来源状态。" : "各来源已完成分页读取。"}结算与订单采用不同日期口径。`,
@@ -395,7 +444,7 @@ function expense(e) {
     prev = r.previous.finance?.expenses.find((v) => v.id === e?.id);
   text("inspTitle", e?.name || "请选择费用字段");
   text("inspSub", e ? `${e.id} · ${money(e.amount, c)}` : "没有可用非零费用");
-  text("inspMomBadge", pct(change(e?.amount, prev?.amount)));
+  $("inspMomBadge").innerHTML = comparisonHtml(r.comparisons?.[`expense|${e?.id}|amount`]);
   text("inspHasCount", e ? `${e.has_orders} 单` : "—");
   text("inspHasRate", "点击数量查看订单");
   text("inspNoCount", e ? `${e.no_orders} 单` : "—");
@@ -452,13 +501,14 @@ function skus() {
   $("skuTableBody").innerHTML = rowsHtml(
     rows,
     (v) =>
-      `<tr class="clickable-row" data-sku="${esc(v.id)}"><td><strong>${esc(v.name)}</strong><div class="mono">${esc(v.sku)}</div></td><td>${num(v.current_units)} 件</td><td>${num(v.previous_units)} 件</td><td><span class="pill-badge ${v.unit_delta > 0 ? "pill-pos" : v.unit_delta < 0 ? "pill-neg" : ""}">${pct(v.change_pct)}</span></td><td>${v.product_video_count == null ? "未获取视频" : `${v.product_video_count} 条商品关联视频`}<br><small>商品级，非SKU归因</small></td><td>尚无SKU广告归因</td><td>仅展示证据，不推断涨跌原因</td></tr>`,
+      `<tr class="clickable-row" data-sku="${esc(v.id)}"><td><strong>${esc(v.name)}</strong><div class="mono">${esc(v.sku)}</div></td><td>${num(v.current_units)} 件${metricDefinitionHtml("sku.units",report)}</td><td>${num(v.previous_units)} 件</td><td>${comparisonHtml(r.comparisons?.[`sku|${v.id}|units`])}<small class="source-note">去年同期 ${num(v.year_units)} 件</small></td><td>${v.product_video_count == null ? "未获取视频" : `${v.product_video_count} 条商品关联视频`}<br><small>商品级，非SKU归因</small>${metricInline(`sku|${v.id}|product_video_count`,"sku.product_video_count")}</td><td>尚无SKU广告归因</td><td>仅展示证据，不推断涨跌原因</td></tr>`,
   );
   $("skuTableBody")
     .querySelectorAll("[data-sku]")
     .forEach(
       (tr) =>
-        (tr.onclick = () => {
+        (tr.onclick = (event) => {
+          if(event.target.closest("details"))return;
           const v = rows.find((s) => s.id === tr.dataset.sku);
           text(
             "skuDiagBox",
@@ -480,22 +530,25 @@ function creators() {
       "联盟订单 / 未分类",
       a ? `${a.affiliate_orders} / ${num(a.unclassified_orders)}` : "—",
       "未匹配不等于非达人或自营",
+      ["affiliate.affiliate_orders","affiliate.unclassified_orders"],
     ],
     [
       "已知实际标准佣金",
       money(a?.actual_std, c),
       "仅SETTLED且明确返回金额的行",
+      ["affiliate.actual_std"],
     ],
     [
       "已知实际广告佣金",
       money(a?.actual_ads, c),
       "空字段不补0；预估与实际分开",
+      ["affiliate.actual_ads"],
     ],
   ];
   $("creatorSplitCards").innerHTML = cards
     .map(
       (v) =>
-        `<div class="recon-stat-card"><div class="recon-stat-label">${v[0]}</div><div class="recon-stat-main mono">${v[1]}</div><div class="recon-stat-sub">${v[2]}</div></div>`,
+        `<div class="recon-stat-card"><div class="recon-stat-label">${v[0]}</div><div class="recon-stat-main mono">${v[1]}</div><div class="recon-stat-sub">${v[2]}</div>${(v[3] || []).map(key=>metricInline(key,key)).join("")}</div>`,
     )
     .join("");
   const key = { orders: "orders", stdComm: "actual_std", adComm: "actual_ads" }[
@@ -509,7 +562,7 @@ function creators() {
       v.actual_std == null && v.actual_ads == null
         ? null
         : Number(v.actual_std || 0) + Number(v.actual_ads || 0);
-    return `<tr><td>#${i + 1}</td><td><strong>@${esc(v.name)}</strong><div class="source-note">已结算 ${v.settled_lines}/${v.lines} 行</div></td><td>${v.orders} 单 / ${v.units} 件</td><td>${money(v.actual_base, c)}</td><td>${money(v.actual_std, c)}<div class="source-note">预估 ${money(v.estimated_std, c)} · 已知实际 ${v.actual_std_known_lines} 行</div></td><td>${money(v.actual_ads, c)}<div class="source-note">预估 ${money(v.estimated_ads, c)} · 已知实际 ${v.actual_ads_known_lines} 行</div></td><td>${money(total, c)}<div class="source-note">已知部分，非完整支出</div></td></tr>`;
+    return `<tr><td>#${i + 1}</td><td><strong>@${esc(v.name)}</strong><div class="source-note">已结算 ${v.settled_lines}/${v.lines} 行</div>${metricInline(`creator|${v.name}|settled_lines`,"creator.settled_lines")}</td><td class="creator-metric-cell">${v.orders} 单${metricInline(`creator|${v.name}|orders`,"creator.orders")} / ${v.units} 件${metricInline(`creator|${v.name}|units`,"creator.units")}</td><td class="creator-metric-cell">${money(v.actual_base, c)}${metricInline(`creator|${v.name}|actual_base`,"creator.actual_base")}</td><td class="creator-metric-cell">${money(v.actual_std, c)}${metricInline(`creator|${v.name}|actual_std`,"creator.actual_std")}<div class="source-note">预估 ${money(v.estimated_std, c)} · 已知实际 ${v.actual_std_known_lines} 行</div>${metricInline(`creator|${v.name}|estimated_std`,"creator.estimated_std")}</td><td class="creator-metric-cell">${money(v.actual_ads, c)}${metricInline(`creator|${v.name}|actual_ads`,"creator.actual_ads")}<div class="source-note">预估 ${money(v.estimated_ads, c)} · 已知实际 ${v.actual_ads_known_lines} 行</div>${metricInline(`creator|${v.name}|estimated_ads`,"creator.estimated_ads")}</td><td class="creator-metric-cell">${money(total, c)}${metricInline(`creator|${v.name}|actual_total`,"creator.actual_total")}<div class="source-note">已知部分，非完整支出</div></td></tr>`;
   });
 }
 function comparison() {
@@ -519,13 +572,14 @@ function comparison() {
       f = p.finance,
       c = r.shop.currency,
       o = p.orders;
-    return `<tr class="clickable-row" data-shop="${esc(r.shop.id)}"><td><strong>${esc(r.shop.name)}</strong><div>${esc(r.shop.region)} · ${statuses[p.coverage.finance.status]}</div></td><td>${c}</td><td>${num(f?.order_count)}</td><td>${money(f?.net_settlement, c)}</td><td>${pct(change(f?.net_settlement, r.previous.finance?.net_settlement))}</td><td>${o?.total ? ((o.cancelled / o.total) * 100).toFixed(1) + "%" : "—"}</td><td>${money(p.affiliate?.actual_std, c)}</td><td>${money(p.affiliate?.actual_ads, c)}</td></tr>`;
+    return `<tr class="clickable-row" data-shop="${esc(r.shop.id)}"><td><strong>${esc(r.shop.name)}</strong><div>${esc(r.shop.region)} · ${statuses[p.coverage.finance.status]}</div></td><td>${c}</td><td>${num(f?.order_count)}${metricCellHtml(r.comparisons?.["finance.order_count"],"finance.order_count",report)}</td><td>${money(f?.net_settlement, c)}${metricCellHtml(r.comparisons?.["finance.net_settlement"],"finance.net_settlement",report)}</td><td>${comparisonHtml(r.comparisons?.["finance.net_settlement"])}</td><td>${o?.total ? ((o.cancelled / o.total) * 100).toFixed(1) + "%" : "—"}${metricCellHtml(r.comparisons?.["orders.cancelled_rate"],"orders.cancelled_rate",report)}</td><td>${money(p.affiliate?.actual_std, c)}${metricCellHtml(r.comparisons?.["affiliate.actual_std"],"affiliate.actual_std",report)}</td><td>${money(p.affiliate?.actual_ads, c)}${metricCellHtml(r.comparisons?.["affiliate.actual_ads"],"affiliate.actual_ads",report)}</td></tr>`;
   });
   $("compareTableBody")
     .querySelectorAll("[data-shop]")
     .forEach(
       (tr) =>
-        (tr.onclick = () => {
+        (tr.onclick = (event) => {
+          if(event.target.closest("details"))return;
           const s = shops.find((s) => s.id === tr.dataset.shop);
           state.site = s.region;
           state.store = s.id;
@@ -585,7 +639,7 @@ function sourceSummary() {
       const previous = Object.values(row.previous.coverage).filter(
         (c) => c.status === "complete",
       ).length;
-      return `<div class="source-summary-shop"><strong>${esc(row.shop.name)}</strong><span>本期完整 ${ready}/5 · 对比期完整 ${previous}/5</span><div class="source-chips">${Object.entries(
+      return `<div class="source-summary-shop"><strong>${esc(row.shop.name)}</strong><span>本期完整 ${ready}/5 · 对比期完整 ${previous}/5 · 去年同期完整 ${Object.values(row.year_ago?.coverage || {}).filter(c=>c.status === "complete").length}/5</span><div class="source-chips">${Object.entries(
         row.current.coverage,
       )
         .map(
@@ -602,8 +656,8 @@ function sourceSummary() {
 }
 function missingData(value) {
   return value?.shops.some((row) =>
-    ["current", "previous"].some((period) =>
-      Object.values(row[period].coverage).some((c) => c.status === "missing" || c.missing_dates?.length),
+    ["current", "previous", "year_ago"].some((period) =>
+      Object.values(row[period]?.coverage || {}).some((c) => c.status === "missing" || c.missing_dates?.length),
     ),
   );
 }
@@ -632,7 +686,9 @@ async function ensureData(g = generation) {
       displayedDataVersion = null;
       $("refreshDataBtn").disabled = true;
       void poll(job.id, g);
-    } else if (result.reason === "recent_failure")
+    } else if (result.reason === "history_unavailable")
+      status("本期和环比数据已显示；平台拒绝部分去年同期分析日期，对应同比已标注不可查询。");
+    else if (result.reason === "recent_failure")
       status(
         "部分来源最近同步失败。当前保留已获取数据，请检查来源状态，或点击“刷新真实数据”重试。",
         true,
@@ -728,7 +784,7 @@ async function poll(id, g) {
       status(
         job.status === "queued"
           ? `同步排队中 · 已完成 ${progress}/${job.total} 项。已保存的数据可继续查看，后台将在当前读取结束后优先处理此日期范围。`
-          : `数据同步 ${progress}/${job.total} · ${source ? source.shop + " / " + (source.period === "previous" ? "对比期" : "本期") + " / " + names[source.source] : "正在读取"}${count}。已读取的数据会逐项显示。`,
+          : `数据同步 ${progress}/${job.total} · ${source ? source.shop + " / " + (source.period === "previous" ? "对比期" : source.period === "year_ago" ? "去年同期" : "本期") + " / " + names[source.source] : "正在读取"}${count}。已读取的数据会逐项显示。`,
       );
       timer = setTimeout(() => poll(id, g), 2500);
       return;
@@ -736,6 +792,8 @@ async function poll(id, g) {
     $("refreshDataBtn").disabled = false;
     if (job.status === "failed")
       status("同步任务失败，已保留成功读取的数据，请检查连接后重试。", true);
+    else if(job.errors?.length && job.errors.every(e=>e.period === "year_ago" && e.platform_code === 28001022))
+      status("本期和环比数据已显示；平台拒绝部分去年同期分析日期，对应同比已标注不可查询。");
     else if (job.errors?.length)
       status(
         `同步结束，${job.errors.length} 个来源/日期失败，其余数据已显示。请查看来源状态后重试。`,
@@ -748,7 +806,7 @@ async function poll(id, g) {
       );
     else
       status(
-        "本期与对比期数据同步完成。下方可查看费用、SKU、地区、状态、时段、渠道及达人明细。",
+        "本期、环比与同比数据同步完成；可比性以每个指标旁的状态为准。下方可查看费用、SKU、地区、状态、时段、渠道及达人明细。",
       );
   } catch (e) {
     if (g === generation) {

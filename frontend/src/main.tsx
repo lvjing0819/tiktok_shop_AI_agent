@@ -7,6 +7,8 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import "./metricStyles.css";
+import { PageMetricGuide } from "./MetricGuide";
 import {
   Icon,
   RoleMark,
@@ -1026,6 +1028,7 @@ function App() {
             <AdsPanel api={api} shop={shop} modelMode={health.model_mode} />
           )}
           {view === "legacy" && <LegacyPanel api={api} />}
+        <PageMetricGuide page={view === "chat" ? "chat" : view === "operations" ? "operations" : view === "legacy" ? "legacy" : view === "ads" ? "ads" : view === "finance" ? "finance" : view === "inventory" ? "inventory" : view === "orders" ? "orders" : view === "overview" ? "overview" : "chat"}/>
         </main>
         <footer className="app-footer">
           <span>

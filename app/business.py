@@ -354,7 +354,7 @@ def inventory_view(workspace):
                 held=local.get((w['id'],sku['id']),0)
                 qty = s['on_hand']-s['warehouse_reserved']-s['safety_stock']-held if s else None
                 rows.append({'warehouse_id': w['id'], 'warehouse': w['name'], 'country': w['country'], 'kind': w['kind'], 'sku_id': sku['id'], 'sku': sku['code'], 'product_id': sku['product_id'], 'on_hand': s['on_hand'] if s else None, 'warehouse_reserved': s['warehouse_reserved'] if s else None, 'local_reserved': held, 'safety_stock': s['safety_stock'] if s else None, 'available': max(0, qty) if qty is not None else None, 'over_reserved': qty is not None and qty < 0, 'low_stock': qty is not None and qty <= 0, 'source': s['source'] if s else 'unknown', 'updated_at': s['updated_at'] if s else None, 'revision': s['revision'] if s else 0, 'stale': bool(s and time.time() - s['updated_at'] > 86400)})
-    return {'warehouses': [{**w, 'api_status': 'not_connected'} for w in ws], 'rows': rows, 'transfers': list_rows(transfers, workspace), 'reservations': list_rows(reservations, workspace), 'source': 'warehouse_records', 'channel_inventory_is_physical': False, 'auto_sync': False}
+    return {'sku_count': len(sku_rows), 'warehouses': [{**w, 'api_status': 'not_connected'} for w in ws], 'rows': rows, 'transfers': list_rows(transfers, workspace), 'reservations': list_rows(reservations, workspace), 'source': 'warehouse_records', 'channel_inventory_is_physical': False, 'auto_sync': False}
 
 
 async def sync_orders(workspace, body):
@@ -395,7 +395,7 @@ def save_finance(workspace, shop_id, order_id, body):
         return {**item, 'payload': body.model_dump(), 'source': 'manual', 'settlement_api_connected': False}
 
 
-def dashboard(workspace):
+def dashboard(workspace, **filters):
     os = list_rows(orders, workspace)
     fs = {r['id']: r for r in list_rows(financials, workspace)}
     amounts = {};statuses = {};rows = []
@@ -425,13 +425,15 @@ def dashboard(workspace):
                 group['estimated_contribution_known_orders'] += estimate;group['cost_complete_orders'] += 1
             if settled is not None:
                 group['settled_profit_known_orders'] += settled;group['settled_known_orders'] += 1
-        rows.append({'shop_id': r['shop_id'], 'order_id': r['order_id'], 'status': r['status'], 'create_time': r['create_time'], 'currency': currency, 'total_amount': str(amount) if amount is not None else None, 'estimated_contribution': str(estimate) if estimate is not None else None, 'settled_profit': str(settled) if settled is not None else None, 'costs_complete': bool(f and f['costs_complete']), 'finance_revision': fs[r['id']]['revision'] if r['id'] in fs else 0, 'finance_input': f, 'synced_at': r['synced_at']})
+        rows.append({'shop_id': r['shop_id'], 'order_id': r['order_id'], 'status': r['status'], 'create_time': r['create_time'], 'paid_time': data.get('paid_time'), 'currency': currency, 'total_amount': str(amount) if amount is not None else None, 'estimated_contribution': str(estimate) if estimate is not None else None, 'settled_profit': str(settled) if settled is not None else None, 'costs_complete': bool(f and f['costs_complete']), 'finance_revision': fs[r['id']]['revision'] if r['id'] in fs else 0, 'finance_input': f, 'synced_at': r['synced_at']})
     groups = {c: {k: str(v) if isinstance(v, Decimal) else v for k,v in g.items()} for c,g in amounts.items()}
     # No known profit rows means unknown, rather than a zero-profit claim.
     for g in groups.values():
         if not g['cost_complete_orders']:g['estimated_contribution_known_orders'] = None
         if not g['settled_known_orders']:g['settled_profit_known_orders'] = None
-    return {'generated_at': time.time(), 'inventory': inventory_view(workspace), 'orders': {'count': len(rows), 'status_counts': statuses, 'rows': rows, 'sync': store.list_records('business_sync', workspace), 'polling': store.list_records('order_poll',workspace), 'coverage': 'persisted snapshots only; see each sync date window and completeness'}, 'finance': {'by_currency': groups, 'missing_cost_orders': sum(not r['costs_complete'] for r in rows), 'settlement_api_connected': False, 'cost_source': 'manual', 'note': '订单金额不是结算收入；贡献估算仅含人工确认完整成本的订单。结算利润基于人工录入净结算额，不重复扣平台费与退款。'}}
+    result = {'generated_at': time.time(), 'inventory': inventory_view(workspace), 'orders': {'count': len(rows), 'status_counts': statuses, 'rows': rows, 'sync': store.list_records('business_sync', workspace), 'polling': store.list_records('order_poll',workspace), 'coverage': 'persisted snapshots only; see each sync date window and completeness'}, 'finance': {'by_currency': groups, 'missing_cost_orders': sum(not r['costs_complete'] for r in rows), 'settlement_api_connected': False, 'cost_source': 'manual', 'note': '订单金额不是结算收入；贡献估算仅含人工确认完整成本的订单。结算利润基于人工录入净结算额，不重复扣平台费与退款。'}}
+    from app import business_metrics
+    return business_metrics.decorate(workspace, result, **filters)
 
 
 class PricingInput(Input):

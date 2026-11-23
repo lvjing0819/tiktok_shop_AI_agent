@@ -7,6 +7,8 @@ const markup = (await readFile(new URL('../analytics.html',import.meta.url),'utf
 // Execute the production entry and its real DOM handlers. Only canvas drawing,
 // Hub navigation and the network are replaced; no TikTok or model requests run.
 const source = (await readFile(new URL('../src/analytics.js',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'');
+const definitions=JSON.parse(await readFile(new URL('../../app/metric_definitions.json',import.meta.url),'utf8'));
+const metricSource=(await readFile(new URL('../src/metricDisplay.js',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'').replace(/^export /gm,'');
 const shop = {id:'1',name:'Test Shop',region:'MY',currency:'MYR',timezone:'Asia/Kuala_Lumpur'};
 const sources = ['orders','finance','affiliate','performance','videos'];
 function report(filters) {
@@ -34,6 +36,7 @@ async function app(t, reply = value => value) {
   data = reply(data, url);
   return {ok:true,status:200,json:async()=>data};
  };
+ w.metricCatalog=definitions;w.eval(metricSource);
  w.eval(source);
  const wait=async(predicate)=>{for(let i=0;i<40;i++){if(predicate())return;await new Promise(resolve=>setImmediate(resolve));}assert.ok(predicate(),'UI did not settle: '+w.document.getElementById('dataStatus').textContent);};
  await wait(()=>logs.some(r=>r.url.pathname.includes('/refresh/')));
@@ -100,4 +103,29 @@ test('cached order cards remain visible while platform-only analysis waits in qu
  });
  await wait(()=>$('dataStatus').textContent.includes('同步排队中'));
  assert.equal($('kpiTotalOrders').textContent,'333');
+});
+
+
+test('metric values show server comparisons and preserve an open definition after refresh',async t=>{
+ let version=1;
+ const {$,timers,wait}=await app(t,(data,url)=>{
+  if(url.pathname.includes('/refresh/'))return {...data,data_version:version};
+  if(url.pathname.endsWith('/dashboard')){
+   data.year_ago_window={start_date:'2025-11-15',end_date:'2025-11-21'};
+   data.shops[0].current.orders={total:120,delivered:60,cancelled:10,in_transit:50,statuses:[],regions:[],cancellation_reasons:[],hours:Array(24).fill(0),skus:[]};
+   data.shops[0].current.coverage.orders.status='complete';
+   const entry=(key,value,prior,yoy,unit='%')=>({key,definition:key,label:key,value:String(value),previous:{status:'ok',change:prior,unit},year_ago:{status:'ok',change:yoy,unit}});
+   data.shops[0].comparisons={'orders.total':entry('orders.total',120,20,-10),'orders.delivered_rate':entry('orders.delivered_rate',50,10,-2,'百分点')};
+  }
+  return data;
+ });
+ await wait(()=>$('kpiTotalOrders').textContent==='120');
+ const area=()=>$.call(null,'kpiTotalOrders').parentElement.querySelector('[data-metric-for="kpiTotalOrders"]');
+ assert.match(area().textContent,/环比 \+20\.0%/);assert.match(area().textContent,/同比 -10\.0%/);
+ const help=area().querySelector('details');help.open=true;
+ assert.match(help.textContent,/2025-11-15/);
+ version=2;await timers.values().next().value();
+ assert.equal(area().querySelector('details').open,true,'background refresh must not close a definition being read');
+ const rate=$('kpiDeliveredRate').parentElement.querySelector('[data-metric-for="kpiDeliveredRate"]');
+ assert.match(rate.textContent,/\+10\.0百分点/);
 });

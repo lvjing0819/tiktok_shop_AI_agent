@@ -14,6 +14,7 @@ import {
 } from "./ui";
 import { OrderChart } from "./Charts";
 import PricingPanel from "./PricingPanel";
+import { MetricScope, MetricHelp } from "./MetricGuide";
 type Warehouse = { id: string; name: string; country: string; kind: string };
 type Product = { id: string; name: string; facts: string };
 type SKU = { id: string; product_id: string; code: string; name: string };
@@ -114,9 +115,10 @@ export default function BusinessPanel({
       useState<Record<string, string>>(emptyCosts),
     [complete, setComplete] = useState(false),
     [financeRevision, setFinanceRevision] = useState(0);
+  const dashboardPath = "/business/dashboard?"+new URLSearchParams({days:dateRange,shop_id:shopFilter,search,order_status:statusFilter});
   async function refresh() {
     const [d, c] = await Promise.all([
-      api("/business/dashboard"),
+      api(dashboardPath),
       api("/business/catalog"),
     ]);
     setData(d);
@@ -127,7 +129,7 @@ export default function BusinessPanel({
     async function load() {
       try {
         const [d, c] = await Promise.all([
-          api("/business/dashboard"),
+          api(dashboardPath),
           api("/business/catalog"),
         ]);
         if (live) {
@@ -152,7 +154,7 @@ export default function BusinessPanel({
       live = false;
       clearInterval(timer);
     };
-  }, [api]);
+  }, [api, dashboardPath]);
   useEffect(() => {
     setPage(1);
     setSearch("");
@@ -201,9 +203,7 @@ export default function BusinessPanel({
         (!shopFilter || o.shop_id === shopFilter) &&
         o.create_time >= cutoff &&
         (!statusFilter || o.status === statusFilter) &&
-        (!search ||
-          o.order_id.includes(search) ||
-          shopName(o.shop_id).toLowerCase().includes(search.toLowerCase())),
+        (!search || o.order_id.toLowerCase().includes(search.toLowerCase())),
     )
     .sort((a, b) => b.create_time - a.create_time);
   const filteredStock = allStock.filter(
@@ -213,7 +213,7 @@ export default function BusinessPanel({
         r.sku.toLowerCase().includes(search.toLowerCase()) ||
         r.warehouse.includes(search)),
   );
-  const financeOrders = orders
+  const financeOrders = filtered
     .filter(
       (o) =>
         o.currency === currency && (!search || o.order_id.includes(search)),
@@ -319,6 +319,7 @@ export default function BusinessPanel({
       Math.min(page, Math.max(1, Math.ceil(rows.length / 15))) * 15,
     );
   return (
+    <MetricScope.Provider value={{comparisons:{...(data?.metric_comparisons || {}),...(data?.metric_comparisons_by_currency?.[currency] || {})},context:data?.metric_context}}>
     <section className="business-panel">
       <div className="page-heading">
         <div>
@@ -394,7 +395,7 @@ export default function BusinessPanel({
         </div>
       ) : (
         <>
-          {(initialTab === "overview" || initialTab === "orders") && (
+          {(initialTab === "overview" || initialTab === "orders" || initialTab === "finance") && (
             <div className="data-toolbar">
               <div className="toolbar-filters">
                 <select
@@ -498,8 +499,9 @@ export default function BusinessPanel({
                   </div>
                   {orders.length ? (
                     <OrderChart
+                      comparisonDays={data?.order_chart}
                       orders={orders.filter(
-                        (o) => !shopFilter || o.shop_id === shopFilter,
+                        (o) => (!shopFilter || o.shop_id === shopFilter) && (!statusFilter || o.status === statusFilter) && (!search || o.order_id.toLowerCase().includes(search.toLowerCase())),
                       )}
                     />
                   ) : (
@@ -733,7 +735,7 @@ export default function BusinessPanel({
                     <Icon name="search" size={16} />
                     <input
                       aria-label="搜索订单"
-                      placeholder="搜索订单号或店铺名称"
+                      placeholder="搜索订单号"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
@@ -771,7 +773,7 @@ export default function BusinessPanel({
                           <tr>
                             <th>订单号 / 创建时间</th>
                             <th>店铺</th>
-                            <th>支付总额</th>
+                            <th>支付总额<MetricHelp id="business.all_status_order_amount" showComparison={false}/></th>
                             <th>订单状态</th>
                             <th>最近同步</th>
                             <th />
@@ -964,16 +966,16 @@ export default function BusinessPanel({
                                   {r.kind === "mainland" ? "大陆仓" : "海外仓"}
                                 </small>
                               </td>
-                              <td className="numeric">{r.on_hand ?? "—"}</td>
+                              <td className="numeric">{r.on_hand ?? "—"}<MetricHelp id="inventory.on_hand" comparison={data.metric_comparisons?.[`inventory|${r.warehouse_id}|${r.sku_id}|on_hand`]}/></td>
                               <td className="numeric">
-                                {r.warehouse_reserved ?? "—"}
+                                {r.warehouse_reserved ?? "—"}<MetricHelp id="inventory.warehouse_reserved" comparison={data.metric_comparisons?.[`inventory|${r.warehouse_id}|${r.sku_id}|warehouse_reserved`]}/>
                               </td>
-                              <td className="numeric">{r.local_reserved}</td>
+                              <td className="numeric">{r.local_reserved}<MetricHelp id="inventory.local_reserved" comparison={data.metric_comparisons?.[`inventory|${r.warehouse_id}|${r.sku_id}|local_reserved`]}/></td>
                               <td className="numeric">
-                                {r.safety_stock ?? "—"}
+                                {r.safety_stock ?? "—"}<MetricHelp id="inventory.safety_stock" comparison={data.metric_comparisons?.[`inventory|${r.warehouse_id}|${r.sku_id}|safety_stock`]}/>
                               </td>
                               <td className="numeric inventory-available">
-                                {r.available ?? "—"}
+                                {r.available ?? "—"}<MetricHelp id="inventory.available" comparison={data.metric_comparisons?.[`inventory|${r.warehouse_id}|${r.sku_id}|available`]}/>
                               </td>
                               <td>
                                 <StatusBadge
@@ -1046,7 +1048,7 @@ export default function BusinessPanel({
               <div className="grid">
                 <article>
                   <div className="panel-heading">
-                    <h2>在途调拨</h2>
+                    <h2>调拨记录</h2><MetricHelp id="inventory.transfer_count"/>
                     <span className="small-pill">
                       {data.inventory.transfers.length}
                     </span>
@@ -1071,7 +1073,7 @@ export default function BusinessPanel({
                 </article>
                 <article>
                   <div className="panel-heading">
-                    <h2>订单占用</h2>
+                    <h2>订单占用</h2><MetricHelp id="inventory.reservation_count"/>
                     <span className="small-pill">
                       {data.inventory.reservations.length}
                     </span>
@@ -1113,7 +1115,7 @@ export default function BusinessPanel({
                 </div>
                 <span className="sync-caption">
                   <Icon name="wallet" size={14} />
-                  本工作区全部已保存订单 · 币种独立核算
+                  当前店铺与创建期的已保存订单 · 币种独立核算
                 </span>
               </div>
               {g ? (
@@ -1220,9 +1222,9 @@ export default function BusinessPanel({
                             <th>订单号</th>
                             <th>店铺</th>
                             <th>成本状态</th>
-                            <th className="numeric">订单金额</th>
-                            <th className="numeric">贡献估算</th>
-                            <th className="numeric">已知净结算利润</th>
+                            <th className="numeric">订单金额<MetricHelp id="business.all_status_order_amount" showComparison={false}/></th>
+                            <th className="numeric">贡献估算<MetricHelp id="business.estimated_contribution_known_orders" showComparison={false}/></th>
+                            <th className="numeric">已知净结算利润<MetricHelp id="business.settled_profit_known_orders" showComparison={false}/></th>
                             <th />
                           </tr>
                         </thead>
@@ -1871,6 +1873,6 @@ export default function BusinessPanel({
           )}
         </Drawer>
       )}
-    </section>
+    </section></MetricScope.Provider>
   );
 }

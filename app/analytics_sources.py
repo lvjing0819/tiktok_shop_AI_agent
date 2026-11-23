@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import time
+from calendar import monthrange
 from datetime import date, datetime, time as midnight, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -37,6 +38,21 @@ class Window(BaseModel):
     def previous(self):
         days = (self.end_date - self.start_date).days + 1
         return self.model_copy(update={'start_date': self.start_date - timedelta(days=days), 'end_date': self.start_date - timedelta(days=1)})
+
+    def year_ago(self):
+        def shift(value):
+            return value.replace(year=value.year-1, day=min(value.day, monthrange(value.year-1, value.month)[1]))
+        return self.model_copy(update={'start_date': shift(self.start_date), 'end_date': shift(self.end_date)})
+
+
+def comparison_periods(window, include_previous=True, include_year_ago=True):
+    periods = [('current', window)]
+    if include_previous:periods.append(('previous', window.previous()))
+    year = window.year_ago()
+    if (include_year_ago and year.start_date >= date(2023, 7, 1)
+            and (year.end_date-year.start_date).days == (window.end_date-window.start_date).days):
+        periods.append(('year_ago', year))
+    return periods
 
 
 def key(*values):
@@ -227,7 +243,7 @@ async def fetch_source(workspace, shop, source, window, heartbeat=lambda: None, 
             'schema_version': 1, 'evidence': refs, 'data': result}
 
 
-def enqueue(workspace, window, *, only_missing=False, source_names=SOURCES, include_previous=True, priority='interactive'):
+def enqueue(workspace, window, *, only_missing=False, source_names=SOURCES, include_previous=True, include_year_ago=None, priority='interactive'):
     selected = selected_shops(workspace, window)
     if not selected:
         raise ValueError('没有符合筛选条件的已授权店铺')
@@ -235,15 +251,18 @@ def enqueue(workspace, window, *, only_missing=False, source_names=SOURCES, incl
         raise ValueError('该店铺需要先配置明确时区')
     units = []
     for s in selected:
-        for period, w in [('current', window)]+([('previous', window.previous())] if include_previous else []):
+        for period, w in comparison_periods(window, include_previous, include_previous if include_year_ago is None else include_year_ago):
             for source in source_names:
+                attempt=store.get(key(workspace,s['id'],source,w.start_date,w.end_date),'analytics_attempt',workspace) if only_missing and period=='year_ago' and source in ('performance','videos') else None
+                if attempt and attempt.get('platform_code')==28001022 and time.time()-attempt.get('attempted_at',0)<86400:
+                    continue
                 existing = snapshot(workspace, s['id'], source, w, s['timezone']) if only_missing else None
                 if only_missing and existing and not existing.get('missing_dates'):
                     continue
                 spans = cache.missing_ranges(workspace, s['id'], source, w, s['timezone']) if only_missing and source in cache.LOCAL_SOURCES else [(w.start_date, w.end_date)]
                 for start, end in spans:
                     units.append({'shop_id': s['id'], 'source': source, 'start_date': str(start), 'end_date': str(end), 'period': period})
-    fingerprint = key(workspace, window.model_dump(mode='json'), only_missing, list(source_names), include_previous, priority)
+    fingerprint = key(workspace, window.model_dump(mode='json'), only_missing, list(source_names), include_previous, include_year_ago, priority)
     with store.db(write=True) as conn:
         rows = conn.execute(select(store.records.c.payload).where(store.records.c.kind == 'analytics_job', store.records.c.shop == workspace).with_for_update()).all()
         for row in rows:
@@ -303,7 +322,7 @@ def process_one():
     completed = set(job['completed']) | {identity(e) for e in job['errors']}
     pending = [u for u in job_units(job) if identity(u) not in completed]
     order = {'orders': 0, 'performance': 1, 'affiliate': 2, 'finance': 3, 'videos': 4}
-    pending.sort(key=lambda u: (u.get('period') != 'current', order[u['source']], u['start_date']))
+    pending.sort(key=lambda u: ({'current': 0, 'previous': 1, 'year_ago': 2}.get(u.get('period'), 0), order[u['source']], u['start_date']))
     if pending:
         unit = pending[0]; source = unit['source']
         window = Window(**{k: unit[k] for k in ('start_date', 'end_date')})
@@ -363,7 +382,7 @@ def ensure(workspace, window):
               and selected_ids.issubset(set(j['shop_ids']))]
     missing = []
     for shop in selected:
-        for label, period in (('current', window), ('previous', window.previous())):
+        for label, period in comparison_periods(window):
             for source in SOURCES:
                 snap = snapshot(workspace, shop['id'], source, period, shop['timezone'])
                 if snap is None or snap.get('missing_dates'):
@@ -378,8 +397,12 @@ def ensure(workspace, window):
         return {'job': public_job(chosen), 'missing': missing, 'reason': 'running'}
     if not missing:
         return {'job': None, 'missing': [], 'reason': 'ready'}
+    unavailable=[]
     for entry in missing:
         attempt = store.get(key(workspace, entry['shop_id'], entry['source'], entry['start_date'], entry['end_date']), 'analytics_attempt', workspace)
+        if attempt and entry['period']=='year_ago' and entry['source'] in ('performance','videos') and attempt.get('platform_code')==28001022 and time.time()-attempt.get('attempted_at',0)<86400:
+            unavailable.append(entry);continue
         if attempt and attempt.get('status') == 'failed' and time.time() - attempt.get('attempted_at', 0) < 300:
             return {'job': None, 'missing': missing, 'reason': 'recent_failure', 'retry_after_seconds': max(1, int(300 - (time.time() - attempt['attempted_at'])))}
+    if len(unavailable)==len(missing):return {'job':None,'missing':missing,'reason':'history_unavailable','unavailable':unavailable}
     return {'job': enqueue(workspace, window, only_missing=True), 'missing': missing, 'reason': 'enqueued'}

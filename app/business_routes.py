@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Literal
 from pydantic import Field
 from app import business as b, store, shop_api, business_sync
 
@@ -13,7 +14,8 @@ def router(scope):
         try:return fn(*args)
         except b.BusinessError as e:raise HTTPException(409,str(e))
     @r.get('/api/business/dashboard')
-    def dashboard(workspace=Depends(scope)):return b.dashboard(workspace)
+    def dashboard(days: Literal['7','30','all']='all', shop_id: str=Query(default='',pattern=r'^[0-9]{0,40}$'), search: str=Query(default='',max_length=200), order_status: str=Query(default='',max_length=40), workspace=Depends(scope)):
+        return b.dashboard(workspace, days=None if days=='all' else int(days), shop_id=shop_id, search=search, order_status=order_status)
     @r.get('/api/business/catalog')
     def catalog(workspace=Depends(scope)):
         return {'products':b.list_rows(b.goods,workspace),'skus':b.list_rows(b.skus,workspace),'mappings':b.list_rows(b.mappings,workspace),'pricing':store.list_records('pricing_profile',workspace)}

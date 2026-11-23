@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
-from app import analytics_sources as sources, store
+from app import analytics_sources as sources, store, metrics
 
 STATUS_NAMES = {'UNPAID': '未支付', 'ON_HOLD': '暂挂', 'AWAITING_SHIPMENT': '待发货', 'PARTIALLY_SHIPPING': '部分发货', 'AWAITING_COLLECTION': '待揽收', 'IN_TRANSIT': '运输中', 'DELIVERED': '已签收', 'COMPLETED': '已完成', 'CANCELLED': '已取消'}
 FEE_NAMES = {'actual_shipping_fee_amount': '实际物流运费', 'platform_commission_amount': '平台佣金', 'transaction_fee_amount': '支付交易费', 'affiliate_commission_amount': '达人标准佣金', 'affiliate_ads_commission_amount': '达人广告佣金', 'affiliate_partner_commission_amount': '联盟合作伙伴佣金', 'sst_amount': '销售与服务税 SST', 'return_shipping_fee_amount': '退货运费', 'customer_paid_shipping_fee_amount': '买家承担运费', 'shipping_fee_discount_amount': '平台物流补贴', 'sfp_service_fee_amount': '免运计划服务费', 'seller_self_shipping_service_fee_amount': '卖家自发货服务费', 'gmv_max_ad_fee_amount': 'GMV Max 平台扣费', 'bonus_cashback_service_fee_amount': '返现计划服务费', 'vn_fix_infrastructure_fee': '平台基础设施费（平台字段名）', 'affiliate_commission_deposit': '达人佣金预留', 'affiliate_commission_release': '达人佣金预留释放', 'international_leg_logistics_amount': '国际段物流费', 'vat_amount': '增值税 VAT', 'pit_amount': '个人所得税 PIT'}
@@ -110,11 +110,11 @@ def aggregate_finance(data, currency):
         for field, value in fields.items():
             total, known = group['fields'].get(field, (Decimal(0), 0))
             group['fields'][field] = (total+decimal(value), known+1)
-    known = [{'order_id': id, 'net': format(g['net'], 'f') if g['known_net'] else None} for id, g in grouped.items()]
+    known = [{'order_id': id, 'net': format(g['net'], 'f') if g['known_net'] == g['count'] else None} for id, g in grouped.items()]
     def split(sign):
         rows = [r for r in known if decimal(r['net']) is not None and (1 if decimal(r['net']) > 0 else -1 if decimal(r['net']) < 0 else 0) == sign]
         return {'orders': len(rows), 'amount': money(r['net'] for r in rows) or '0'}
-    expenses = []
+    expenses = []; expense_values = []
     for field in sorted(all_fields):
         order_values = {}; has = []; no = []
         for id, group in grouped.items():
@@ -125,14 +125,14 @@ def aggregate_finance(data, currency):
             value = format(total, 'f'); order_values[id] = value
             (has if total != 0 else no).append(id)
         amount = money(order_values.values())
-        if amount is None or decimal(amount) == 0:
-            continue
         revenues = [format(grouped[id]['revenue'], 'f') if grouped[id]['known_revenue'] else None for id in has]
         base = money(revenues) if all(v is not None for v in revenues) else None
-        expenses.append({'id': field, 'name': FEE_NAMES.get(field.split('.')[-1], field.split('.')[-1].replace('_', ' ')), 'amount': amount,
+        entry = {'id': field, 'name': FEE_NAMES.get(field.split('.')[-1], field.split('.')[-1].replace('_', ' ')), 'amount': amount,
                          'has_orders': len(has), 'no_orders': len(no), 'unknown_orders': len(grouped)-len(has)-len(no),
                          'base_revenue': base, 'share_pct': float(abs(decimal(amount))/decimal(base)*100) if decimal(base) not in (None, Decimal(0)) else None,
-                         'order_ids': has, 'zero_order_ids': no})
+                         'order_ids': has, 'zero_order_ids': no}
+        expense_values.append({k:v for k,v in entry.items() if k not in ('order_ids','zero_order_ids')})
+        if amount is not None and decimal(amount) != 0:expenses.append(entry)
     statements = [r for r in data.get('statements', []) if r.get('currency') == currency]
     statement_sum = money(r.get('settlement_amount') for r in statements)
     transaction_sum = format(transaction_sum, 'f') if transaction_count and net_complete else None
@@ -143,7 +143,7 @@ def aggregate_finance(data, currency):
             'fees': money(r.get('fee_amount') for r in statements) or ('0' if not statements else None),
             'paid_statement_amount': money(r.get('settlement_amount') for r in statements if r.get('payment_status') == 'PAID') or '0',
             'statement_statuses': count_groups(r.get('payment_status') or 'UNKNOWN' for r in statements),
-            'positive': split(1), 'zero': split(0), 'negative': split(-1), 'expenses': sorted(expenses, key=lambda r: -abs(decimal(r['amount']))),
+            'positive': split(1), 'zero': split(0), 'negative': split(-1), 'expenses': sorted(expenses, key=lambda r: -abs(decimal(r['amount']))), 'expense_values': expense_values,
             'adjustments': adjustments,
             'unknown_net_orders': sum(r['net'] is None for r in known), 'note': '按UTC账单生成日期筛选，订单可能创建于更早日期。正/零/负是本期订单结算流水净额，不是银行逐单到账；没有流水不能认定为未回款。费用保留平台原始正负号，正数可能是退费/补贴。'}
 
@@ -174,10 +174,13 @@ def aggregate_affiliate(data, currency, order_ids):
     for c in creators.values():
         result.append({'name': c['name'], 'orders': len(c['order_ids']), 'units': c['units'], 'actual_base': money(c['actual_bases']), 'actual_std': money(c['actual_std']), 'actual_ads': money(c['actual_ads']),
                        'estimated_std': money(c['estimated_std']), 'estimated_ads': money(c['estimated_ads']), 'settled_lines': c['settled_lines'], 'lines': c['lines'],
+                       'actual_base_known_lines': sum(v is not None for v in c['actual_bases']),
+                       'estimated_std_known_lines': sum(v is not None for v in c['estimated_std']), 'estimated_ads_known_lines': sum(v is not None for v in c['estimated_ads']),
                        'actual_std_known_lines': sum(v is not None for v in c['actual_std']), 'actual_ads_known_lines': sum(v is not None for v in c['actual_ads'])})
     return {'affiliate_orders': len(all_ids), 'matched_orders': len(matched), 'unclassified_orders': len(order_ids-matched),
             'actual_std': money(c['actual_std'] for c in result), 'actual_ads': money(c['actual_ads'] for c in result),
             'creators': sorted(result, key=lambda c: -c['orders']),
+            'actual_fields_complete': all(c['actual_std_known_lines'] == c['settled_lines'] and c['actual_ads_known_lines'] == c['settled_lines'] for c in result),
             'note': '联盟接口仅返回有佣金资格的订单，未匹配订单保持未分类，不等于自营。实际佣金仅汇总SETTLED且明确返回金额的行；空对象为未知，预估佣金另列。达人订单跨SKU/达人可能重叠，不可直接求和为总订单。'}
 
 
@@ -234,18 +237,23 @@ def report(workspace, window):
     selected = sources.selected_shops(workspace, window)
     result = []
     for s in selected:
-        current = period(workspace, s, window);previous = period(workspace, s, window.previous())
+        current = period(workspace, s, window);previous = period(workspace, s, window.previous());year_ago = period(workspace, s, window.year_ago())
         current_skus = {v['id']: v for v in (current.get('orders') or {}).get('skus', [])}
+        year_skus = {v['id']: v for v in (year_ago.get('orders') or {}).get('skus', [])}
         previous_skus = {v['id']: v for v in (previous.get('orders') or {}).get('skus', [])}
         skus = []
-        for id in dict.fromkeys([*current_skus, *previous_skus]):
-            a = current_skus.get(id);b = previous_skus.get(id)
+        for id in dict.fromkeys([*current_skus, *previous_skus, *year_skus]):
+            a = current_skus.get(id);b = previous_skus.get(id);y = year_skus.get(id)
             curr = a['units'] if a else 0 if current['coverage']['orders']['status'] == 'complete' else None
             prev = b['units'] if b else 0 if previous['coverage']['orders']['status'] == 'complete' else None
-            skus.append({**(a or b), 'product_video_count': a.get('product_video_count') if a else None, 'current_units': curr, 'previous_units': prev, 'change_pct': change(curr, prev), 'unit_delta': curr-prev if curr is not None and prev is not None else None})
-        result.append({'shop': s, 'current': current, 'previous': previous, 'skus': sorted(skus, key=lambda v: -(v['current_units'] or 0))})
-    return {'generated_at': time.time(), 'window': window.model_dump(mode='json'), 'previous_window': window.previous().model_dump(mode='json'), 'shops': result,
-            'currency_policy': '每家店铺按原币展示，跨币种金额不相加', 'scope': 'exact cached source windows',
+            skus.append({**(a or b or y), 'year_units': y['units'] if y else 0 if year_ago['coverage']['orders']['status']=='complete' else None, 'product_video_count': a.get('product_video_count') if a else None, 'current_units': curr, 'previous_units': prev, 'change_pct': change(curr, prev), 'unit_delta': curr-prev if curr is not None and prev is not None else None})
+        result.append({'shop': s, 'current': current, 'previous': previous, 'year_ago': year_ago,
+                       'comparison_warnings': (['本期包含尚未结束的店铺自然日，比较值为暂定值。'] if window.end_date >= datetime.now(ZoneInfo(s['timezone'])).date() else []) + (['结算本期包含尚未结束的UTC日，结算比较值为暂定值。'] if window.end_date >= datetime.now(ZoneInfo('UTC')).date() else []),
+                       'comparisons': metrics.build_comparisons(current, previous, year_ago, same_year_length=(window.end_date-window.start_date).days == (window.year_ago().end_date-window.year_ago().start_date).days),
+                       'skus': sorted(skus, key=lambda v: -(v['current_units'] or 0))})
+    return {'generated_at': time.time(), 'window': window.model_dump(mode='json'), 'previous_window': window.previous().model_dump(mode='json'), 'year_ago_window': window.year_ago().model_dump(mode='json'), 'shops': result,
+            'metric_catalog': metrics.CATALOG,
+            'currency_policy': '每家店铺按原币展示，跨币种金额不相加', 'scope': 'date-filtered local facts plus exact platform intervals',
             'capabilities': {'ads_sku_attribution': False, 'logistics_exception_details': False, 'warehouse_api': False},
             'notes': ['数据源各自刷新，完整性和最后更新时间见coverage；今日平台分析数据可能尚未生成。', '广告账户已连接不代表已建立SKU与广告归因；当前不生成因果结论。']}
 
@@ -283,25 +291,16 @@ def re_field(value):
 
 
 def export_csv(result):
+    """The exported values, definitions and comparisons match the visible report."""
     out = io.StringIO();writer = csv.writer(out)
-    writer.writerow(['店铺', '市场', '币种', '开始日期', '结束日期', '模块', '指标', '数值', '完整性', '口径'])
+    writer.writerow(['店铺','市场','币种','开始日期','结束日期','来源','指标','数值','单位','环比基期值','环比变化','环比状态','同比基期值','同比变化','同比状态','日期口径','计算口径','限制说明','环比开始日期','环比结束日期','同比开始日期','同比结束日期'])
+    def safe(value):
+        text = '' if value is None else str(value)
+        return "'"+text if text.lstrip().startswith(('=','+','@')) or (text.lstrip().startswith('-') and decimal(text) is None) else text
     for row in result['shops']:
-        s = row['shop'];p = row['current'];w = result['window']
-        def add(source, metric, value, note):
-            # Neutralize spreadsheet formulas in external product/shop labels.
-            def safe(v):
-                text = '' if v is None else str(v)
-                return "'"+text if text.lstrip().startswith(('=', '+', '@')) or (text.lstrip().startswith('-') and decimal(text) is None) else text
-            writer.writerow([safe(v) for v in [s['name'], s['region'], s['currency'], w['start_date'], w['end_date'], source, metric, value, p['coverage'][source]['status'], note]])
-        if p['orders']:
-            add('orders', '总订单数', p['orders']['total'], p['orders']['note'])
-            for sku in row['skus']:add('orders', 'SKU件数 '+sku['sku'], sku['current_units'], '已支付非取消订单，未扣售后退货')
-        if p['finance']:
-            add('finance', '净结算', p['finance']['net_settlement'], p['finance']['note'])
-            for expense in p['finance']['expenses']:add('finance', expense['id'], expense['amount'], '平台原始正负号；UTC账单生成日期')
-        if p['performance']:
-            for channel in p['performance']['channels']:add('performance', channel['label'], channel['value'], p['performance']['note'])
-        if p['affiliate']:
-            for c in p['affiliate']['creators']:
-                for field in ('orders', 'actual_std', 'actual_ads'):add('affiliate', c['name']+' '+field, c[field], p['affiliate']['note'])
+        shop=row['shop'];window=result['window']
+        for entry in row['comparisons'].values():
+            definition=metrics.CATALOG['metrics'][entry['definition']]
+            prev=entry['previous'];year=entry['year_ago']
+            writer.writerow([safe(v) for v in [shop['name'],shop['region'],shop['currency'],window['start_date'],window['end_date'],entry['source'],entry['label'],entry['value'],shop['currency'] if entry['unit']=='currency' else entry['unit'],prev['baseline'],prev['change'],prev['reason'] or '可比较',year['baseline'],year['change'],year['reason'] or '可比较',definition['date_basis'],definition['formula'],definition['limitations'],result['previous_window']['start_date'],result['previous_window']['end_date'],result['year_ago_window']['start_date'],result['year_ago_window']['end_date']]])
     return '\ufeff'+out.getvalue()

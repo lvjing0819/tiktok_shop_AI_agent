@@ -1,0 +1,867 @@
+{
+  "version": 1,
+  "metrics": {
+    "orders.total": {
+      "label": "总订单量",
+      "source": "orders",
+      "unit": "单",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "按店铺+订单ID去重，包含未支付、取消等全部状态。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "orders.delivered": {
+      "label": "已签收/完成订单",
+      "source": "orders",
+      "unit": "单",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "状态为DELIVERED或COMPLETED的订单数。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "orders.in_transit": {
+      "label": "在途/待发订单",
+      "source": "orders",
+      "unit": "单",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "暂挂、待发货、部分发货、待揽收、运输中订单数。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "orders.cancelled": {
+      "label": "已取消订单",
+      "source": "orders",
+      "unit": "单",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "状态为CANCELLED的订单数；不等于物流异常或退款单数。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "orders.paid_non_cancelled": {
+      "label": "已支付未取消订单",
+      "source": "orders",
+      "unit": "单",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "paid_time有值，且状态不是UNPAID或CANCELLED的订单数。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "orders.delivered_rate": {
+      "label": "签收率",
+      "source": "orders",
+      "unit": "%",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "已签收/完成订单数 ÷ 全部订单数 × 100%；分母为0时未知。",
+      "limitations": "环比/同比展示百分点差，不是百分比增长率。 例如从10%变到12%，变化为+2个百分点。历史订单状态取最近同步值，不能当成当年当日的状态快照。",
+      "comparison": "percentage_points"
+    },
+    "orders.cancelled_rate": {
+      "label": "取消率",
+      "source": "orders",
+      "unit": "%",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "已取消订单数 ÷ 全部订单数 × 100%；分母为0时未知。",
+      "limitations": "环比/同比展示百分点差，不是百分比增长率。 例如从10%变到12%，变化为+2个百分点。历史订单状态取最近同步值，不能当成当年当日的状态快照。",
+      "comparison": "percentage_points"
+    },
+    "finance.net_settlement": {
+      "label": "净结算额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "账单settlement_amount之和。",
+      "limitations": "净结算不是利润或银行逐单到账；不同币种不相加。",
+      "comparison": "relative"
+    },
+    "finance.revenue": {
+      "label": "已结算营收",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "账单revenue_amount之和。",
+      "limitations": "净结算不是利润或银行逐单到账；不同币种不相加。",
+      "comparison": "relative"
+    },
+    "finance.fees": {
+      "label": "账单费用合计",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "账单fee_amount之和，保留平台正负号。",
+      "limitations": "净结算不是利润或银行逐单到账；不同币种不相加。 环比/同比按金额绝对值比较规模；正负方向变化时单独标注，不把退款与收费混算增长率。",
+      "comparison": "magnitude"
+    },
+    "finance.paid_statement_amount": {
+      "label": "已支付状态账单金额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "仅汇总payment_status=PAID的账单净结算额；不是逐笔银行到账。",
+      "limitations": "净结算不是利润或银行逐单到账；不同币种不相加。",
+      "comparison": "relative"
+    },
+    "finance.transaction_net": {
+      "label": "流水净额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "本期账单全部交易流水settlement_amount之和；缺少任何净额字段则未知。",
+      "limitations": "净结算不是利润或银行逐单到账；不同币种不相加。",
+      "comparison": "relative"
+    },
+    "finance.statement_transaction_difference": {
+      "label": "账单减流水差额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "账单净结算额 − 全部交易流水净额；0表示该币种金额对平。",
+      "limitations": "净结算不是利润或银行逐单到账；不同币种不相加。",
+      "comparison": "relative"
+    },
+    "finance.statement_count": {
+      "label": "账单数",
+      "source": "finance",
+      "unit": "份",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "按账单ID去重。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "finance.order_count": {
+      "label": "结算关联订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "从type=ORDER且含order_id的流水中按订单ID去重。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "finance.transaction_count": {
+      "label": "交易流水数",
+      "source": "finance",
+      "unit": "笔",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "按账单ID+流水ID去重，包含调整流水。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "finance.adjustment_count": {
+      "label": "调整流水数",
+      "source": "finance",
+      "unit": "笔",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "type不是ORDER的流水条数。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "finance.expense_field_count": {
+      "label": "非零费用项目数",
+      "source": "finance",
+      "unit": "项",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "本期金额非零的费用字段数，不是费用总金额。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "finance.positive.orders": {
+      "label": "正净额结算订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "先按订单汇总本期结算流水净额，再按大于0、等于0、小于0分类。",
+      "limitations": "零净额不等于未回款；没有结算流水的订单不在这些分类中。",
+      "comparison": "relative"
+    },
+    "finance.positive.amount": {
+      "label": "正净额结算订单金额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该分类订单的本期流水净额之和。",
+      "limitations": "不是这些订单的历史全部回款。",
+      "comparison": "relative"
+    },
+    "finance.positive.share": {
+      "label": "正净额结算订单占比",
+      "source": "finance",
+      "unit": "%",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该分类订单数 ÷ 本期结算关联订单数 × 100%。",
+      "limitations": "环比/同比为百分点差。",
+      "comparison": "percentage_points"
+    },
+    "finance.zero.orders": {
+      "label": "零净额结算订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "先按订单汇总本期结算流水净额，再按大于0、等于0、小于0分类。",
+      "limitations": "零净额不等于未回款；没有结算流水的订单不在这些分类中。",
+      "comparison": "relative"
+    },
+    "finance.zero.amount": {
+      "label": "零净额结算订单金额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该分类订单的本期流水净额之和。",
+      "limitations": "不是这些订单的历史全部回款。",
+      "comparison": "relative"
+    },
+    "finance.zero.share": {
+      "label": "零净额结算订单占比",
+      "source": "finance",
+      "unit": "%",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该分类订单数 ÷ 本期结算关联订单数 × 100%。",
+      "limitations": "环比/同比为百分点差。",
+      "comparison": "percentage_points"
+    },
+    "finance.negative.orders": {
+      "label": "负净额结算订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "先按订单汇总本期结算流水净额，再按大于0、等于0、小于0分类。",
+      "limitations": "零净额不等于未回款；没有结算流水的订单不在这些分类中。",
+      "comparison": "relative"
+    },
+    "finance.negative.amount": {
+      "label": "负净额结算订单金额",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该分类订单的本期流水净额之和。",
+      "limitations": "不是这些订单的历史全部回款。 环比/同比按金额绝对值比较规模；正负方向变化时单独标注，不把退款与收费混算增长率。",
+      "comparison": "magnitude"
+    },
+    "finance.negative.share": {
+      "label": "负净额结算订单占比",
+      "source": "finance",
+      "unit": "%",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该分类订单数 ÷ 本期结算关联订单数 × 100%。",
+      "limitations": "环比/同比为百分点差。",
+      "comparison": "percentage_points"
+    },
+    "affiliate.affiliate_orders": {
+      "label": "联盟订单数",
+      "source": "affiliate",
+      "unit": "单",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "联盟接口返回的订单ID去重数；不是全店订单数。",
+      "limitations": "匹配类指标同时要求订单与联盟来源完整。",
+      "comparison": "relative"
+    },
+    "affiliate.matched_orders": {
+      "label": "匹配到店铺订单的联盟订单数",
+      "source": "affiliate",
+      "unit": "单",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "联盟订单ID与同创建期店铺订单ID的交集。",
+      "limitations": "匹配类指标同时要求订单与联盟来源完整。",
+      "comparison": "relative"
+    },
+    "affiliate.unclassified_orders": {
+      "label": "未分类订单数",
+      "source": "affiliate",
+      "unit": "单",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "同创建期店铺订单中未匹配联盟接口的订单数；未匹配不等于自营。",
+      "limitations": "匹配类指标同时要求订单与联盟来源完整。",
+      "comparison": "relative"
+    },
+    "affiliate.actual_std": {
+      "label": "已知实际标准佣金",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "已结算SKU明细中实际标准佣金的已返回金额之和。",
+      "limitations": "未结算和未返回金额不补0；不代表全店完整佣金支出，也不等于支付日期口径的费用。",
+      "comparison": "relative"
+    },
+    "affiliate.actual_ads": {
+      "label": "已知实际广告佣金",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "已结算SKU明细中实际Shop Ads佣金的已返回金额之和。",
+      "limitations": "未结算和未返回金额不补0；不代表全店完整佣金支出，也不等于支付日期口径的费用。",
+      "comparison": "relative"
+    },
+    "affiliate.actual_total": {
+      "label": "已知实际佣金合计",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "已返回的实际标准佣金 + 实际广告佣金。",
+      "limitations": "未结算和未返回金额不补0；不代表全店完整佣金支出，也不等于支付日期口径的费用。",
+      "comparison": "relative"
+    },
+    "performance.gmv": {
+      "label": "平台GMV",
+      "source": "performance",
+      "unit": "currency",
+      "date_basis": "所选日期对应的平台支付期，按店铺时区；平台数据可能有延迟。",
+      "formula": "直接使用平台sales.gmv金额，按支付期统计，包含平台定义的取消/退款。",
+      "limitations": "不可与创建期订单金额混同；AOV、去重数等不能简单按日相加。",
+      "comparison": "relative"
+    },
+    "performance.avg_order_value": {
+      "label": "平台AOV",
+      "source": "performance",
+      "unit": "currency",
+      "date_basis": "所选日期对应的平台支付期，按店铺时区；平台数据可能有延迟。",
+      "formula": "直接使用平台avg_order_value，不用创建期订单金额倒算。",
+      "limitations": "不可与创建期订单金额混同；AOV、去重数等不能简单按日相加。",
+      "comparison": "relative"
+    },
+    "performance.paid_orders": {
+      "label": "平台支付订单数",
+      "source": "performance",
+      "unit": "单",
+      "date_basis": "所选日期对应的平台支付期，按店铺时区；平台数据可能有延迟。",
+      "formula": "直接使用平台sales.orders_count；与按创建日期的订单数口径不同。",
+      "limitations": "不可与创建期订单金额混同；AOV、去重数等不能简单按日相加。",
+      "comparison": "relative"
+    },
+    "expense.amount": {
+      "label": "费用项目原值",
+      "source": "finance",
+      "unit": "currency",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "按订单汇总该费用字段，只有该订单每条流水都明确返回该字段才计入；保留正负号。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。 环比/同比按金额绝对值比较规模；正负方向变化时单独标注，不把退款与收费混算增长率。",
+      "comparison": "magnitude"
+    },
+    "expense.has_orders": {
+      "label": "费用净额非零订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该费用字段本期净额非零、且字段完整的去重订单数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "expense.no_orders": {
+      "label": "费用净额明确零订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "该费用字段本期净额明确为0的订单数；未知字段不在其中。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "expense.unknown_orders": {
+      "label": "费用字段未知订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "至少一条订单流水未返回该费用字段的订单数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "expense.share_pct": {
+      "label": "费用占对应营收比例",
+      "source": "finance",
+      "unit": "%",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "绝对费用净额 ÷ 净额非零且字段完整的订单营收 × 100%。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "percentage_points"
+    },
+    "sku.units": {
+      "label": "SKU销量（件数）",
+      "source": "orders",
+      "unit": "件",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "已支付且未取消订单的有效商品单位数之和；未扣售后退货。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "sku.product_video_count": {
+      "label": "商品关联视频数",
+      "source": "videos",
+      "unit": "条",
+      "date_basis": "所选视频分析区间，按店铺时区。",
+      "formula": "区间内与商品ID关联的视频ID去重数；同商品的多个SKU会重复展示。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.orders": {
+      "label": "达人联盟订单数",
+      "source": "affiliate",
+      "unit": "单",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人关联的联盟订单ID去重数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.units": {
+      "label": "达人联盟件数",
+      "source": "affiliate",
+      "unit": "件",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人联盟SKU明细quantity之和。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。 数量按接口返回明细汇总，未按最终退款重算净销量。",
+      "comparison": "relative"
+    },
+    "creator.actual_base": {
+      "label": "已结算计佣销售额",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "按所选日期内创建的联盟订单筛选，再取最近同步时已结算的明细；不是按结算发生日期筛选，也不是达人历史累计。",
+      "formula": "平台用来计算该达人佣金的商品销售金额之和，不是达人赚到的佣金；只计算已结算且已返回金额的明细。例如商品计佣金额100元、佣金率10%，计佣销售额是100元，达人佣金是10元。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative",
+      "source_field": "actual_commission_base"
+    },
+    "creator.actual_std": {
+      "label": "达人已知实际标准佣金",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人已结算明细中，平台返回的实际标准佣金金额相加。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.actual_ads": {
+      "label": "达人已知实际广告佣金",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人已结算明细中，平台返回的实际广告佣金金额相加。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.actual_total": {
+      "label": "达人已知实际佣金合计",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人已知实际标准佣金 + 已知实际广告佣金。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.estimated_std": {
+      "label": "达人预估标准佣金",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人所有返回明细的预估标准佣金相加，可能包含尚未结算订单，不等于已付佣金。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.estimated_ads": {
+      "label": "达人预估广告佣金",
+      "source": "affiliate",
+      "unit": "currency",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人所有返回明细的预估广告佣金相加，可能包含尚未结算订单，不等于已付佣金。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.settled_lines": {
+      "label": "已结算联盟明细行数",
+      "source": "affiliate",
+      "unit": "行",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "结算状态为SETTLED的SKU明细行数；不是去重订单数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "creator.lines": {
+      "label": "联盟明细行数",
+      "source": "affiliate",
+      "unit": "行",
+      "date_basis": "所选日期内创建的联盟订单，按各店铺当地时区；实际佣金仅纳入最近同步时已结算且明确返回的明细。",
+      "formula": "该达人返回的联盟SKU明细行数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "dimension.orders": {
+      "label": "维度订单数",
+      "source": "orders",
+      "unit": "单",
+      "date_basis": "所选日期内创建的订单，按各店铺当地时区；订单状态取最近一次同步值，不还原历史当日状态。",
+      "formula": "同创建期按省州、当前状态、取消原因或下单小时分组的订单数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "dimension.channel_gmv": {
+      "label": "渠道归因GMV",
+      "source": "performance",
+      "unit": "currency",
+      "date_basis": "平台支付/归因期，按店铺时区。",
+      "formula": "使用平台视频、直播、商品卡归因GMV原值；各渠道可能重叠，不能强制相加当全店成交额。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "finance.statement_status": {
+      "label": "账单支付状态数量",
+      "source": "finance",
+      "unit": "份",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "按平台账单payment_status分组的账单数。",
+      "limitations": "不同币种不相加；来源、字段或明细不全时不计算增长率。",
+      "comparison": "relative"
+    },
+    "rank": {
+      "label": "排名",
+      "source": "derived",
+      "unit": "名",
+      "date_basis": "当前筛选和排序条件。",
+      "formula": "在当前返回记录中的序号，排序条件变化会改变名次。",
+      "limitations": "名次不计算百分比增长率。",
+      "comparison": "none"
+    },
+    "inventory.on_hand": {
+      "label": "实物在库量",
+      "source": "warehouse_records",
+      "unit": "件",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "仓库盘点或仓库API记录的在库数量。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.warehouse_reserved": {
+      "label": "仓库占用量",
+      "source": "warehouse_records",
+      "unit": "件",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "仓库已确认占用的数量。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.local_reserved": {
+      "label": "本地待确认占用",
+      "source": "warehouse_records",
+      "unit": "件",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "仍处于local状态的本地预留数量，仓库确认后不再重复计入。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.safety_stock": {
+      "label": "安全库存",
+      "source": "warehouse_records",
+      "unit": "件",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "内部设置的安全库存数量。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.available": {
+      "label": "实物可售库存",
+      "source": "warehouse_records",
+      "unit": "件",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "max(0, 在库 − 仓库占用 − 安全库存 − 本地待确认占用)。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.warehouse_count": {
+      "label": "已建档仓库数",
+      "source": "warehouse_records",
+      "unit": "个",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "当前工作区的仓库档案数。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.sku_count": {
+      "label": "内部SKU数",
+      "source": "warehouse_records",
+      "unit": "个",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "当前工作区内部SKU档案数，不等于平台商品数。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.review_count": {
+      "label": "待复核库存项",
+      "source": "warehouse_records",
+      "unit": "项",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "缺少记录、已过期或占用超过库存的仓库+SKU组合数。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "business.all_status_order_amount": {
+      "label": "所有状态订单金额",
+      "source": "manual_costs",
+      "unit": "currency",
+      "date_basis": "成本页所显示的已保存订单范围，按北京时间创建日期；成本取最近人工确认值。",
+      "formula": "已保存订单payment.total_amount之和，包含未支付和取消状态，含平台返回运费税费。",
+      "limitations": "只代表已保存且具备成本依据的部分，不等于店铺完整利润。",
+      "comparison": "relative"
+    },
+    "business.confirmed_paid_non_cancelled_amount": {
+      "label": "已支付且未取消订单金额",
+      "source": "manual_costs",
+      "unit": "currency",
+      "date_basis": "成本页所显示的已保存订单范围，按北京时间创建日期；成本取最近人工确认值。",
+      "formula": "已保存订单中paid_time有值且未取消、非未支付的total_amount之和。",
+      "limitations": "只代表已保存且具备成本依据的部分，不等于店铺完整利润。",
+      "comparison": "relative"
+    },
+    "business.estimated_contribution_known_orders": {
+      "label": "已知成本订单贡献",
+      "source": "manual_costs",
+      "unit": "currency",
+      "date_basis": "成本页所显示的已保存订单范围，按北京时间创建日期；成本取最近人工确认值。",
+      "formula": "人工确认完整成本的订单支付额 − 采购 − 物流 − 广告 − 平台费 − 退款 − 其他成本。",
+      "limitations": "只代表已保存且具备成本依据的部分，不等于店铺完整利润。",
+      "comparison": "relative"
+    },
+    "business.settled_profit_known_orders": {
+      "label": "已知净结算利润",
+      "source": "manual_costs",
+      "unit": "currency",
+      "date_basis": "成本页所显示的已保存订单范围，按北京时间创建日期；成本取最近人工确认值。",
+      "formula": "人工录入净结算额 − 采购 − 物流 − 广告 − 其他成本；不重复扣已在净结算中扣除的平台费和退款。",
+      "limitations": "只代表已保存且具备成本依据的部分，不等于店铺完整利润。",
+      "comparison": "relative"
+    },
+    "business.cost_complete_orders": {
+      "label": "成本完整订单数",
+      "source": "manual_costs",
+      "unit": "单",
+      "date_basis": "成本页所显示的已保存订单范围，按北京时间创建日期；成本取最近人工确认值。",
+      "formula": "人工确认成本完整且可计算贡献的订单数。",
+      "limitations": "只代表已保存且具备成本依据的部分，不等于店铺完整利润。",
+      "comparison": "relative"
+    },
+    "business.settled_known_orders": {
+      "label": "已知净结算利润订单数",
+      "source": "manual_costs",
+      "unit": "单",
+      "date_basis": "成本页所显示的已保存订单范围，按北京时间创建日期；成本取最近人工确认值。",
+      "formula": "人工确认成本完整并已录入净结算额的订单数。",
+      "limitations": "只代表已保存且具备成本依据的部分，不等于店铺完整利润。",
+      "comparison": "relative"
+    },
+    "business.orders": {
+      "label": "已保存订单",
+      "source": "saved_orders",
+      "unit": "单",
+      "date_basis": "按本页创建日期范围（北京时间），状态为最近保存值。",
+      "formula": "已保存订单按订单ID+店铺ID去重；由本页的店铺、创建日期、状态和搜索条件筛选。",
+      "limitations": "仅已保存数据，缺少历史同步覆盖时不能称为全店完整增长率。",
+      "comparison": "relative"
+    },
+    "business.fulfillment": {
+      "label": "待发货/待揽收",
+      "source": "saved_orders",
+      "unit": "单",
+      "date_basis": "按本页创建日期范围（北京时间），状态为最近保存值。",
+      "formula": "所选订单中待发货、部分发货、待揽收的数量。",
+      "limitations": "仅已保存数据，缺少历史同步覆盖时不能称为全店完整增长率。",
+      "comparison": "relative"
+    },
+    "business.in_transit": {
+      "label": "运输中",
+      "source": "saved_orders",
+      "unit": "单",
+      "date_basis": "按本页创建日期范围（北京时间），状态为最近保存值。",
+      "formula": "所选订单中IN_TRANSIT的数量。",
+      "limitations": "仅已保存数据，缺少历史同步覆盖时不能称为全店完整增长率。",
+      "comparison": "relative"
+    },
+    "business.delivered": {
+      "label": "已送达/已完成",
+      "source": "saved_orders",
+      "unit": "单",
+      "date_basis": "按本页创建日期范围（北京时间），状态为最近保存值。",
+      "formula": "所选订单中DELIVERED或COMPLETED的数量。",
+      "limitations": "仅已保存数据，缺少历史同步覆盖时不能称为全店完整增长率。",
+      "comparison": "relative"
+    },
+    "operations.backlog": {
+      "label": "待处理运营任务",
+      "source": "task_records",
+      "unit": "个",
+      "date_basis": "当前任务状态快照。",
+      "formula": "待补充、待审批、失败或受阻任务数。",
+      "limitations": "没有历史任务状态快照时，不使用任务创建数量冒充历史待办。",
+      "comparison": "none"
+    },
+    "ads.report": {
+      "label": "广告报告数值",
+      "source": "ads_mcp",
+      "unit": "按平台返回",
+      "date_basis": "每份广告报告所列的广告账户、日期、账户时区、币种和归因窗口。",
+      "formula": "按报告引用的工具字段原值解释；消耗不是净消耗，平台ROI不是净利润。",
+      "limitations": "自然语言报告未附可核验的基期工具结果时，环比/同比显示未提供，不推断。",
+      "comparison": "evidence_required"
+    },
+    "pricing.profile": {
+      "label": "定价测算",
+      "source": "manual_rules",
+      "unit": "按输入币种",
+      "date_basis": "当前输入的定价方案；不是历史成交记录。",
+      "formula": "按人工配置的进货、物流、费率和目标利润规则计算。",
+      "limitations": "方案输入不做环比/同比；真实成交须以订单和结算为准。",
+      "comparison": "none"
+    },
+    "legacy.demo": {
+      "label": "历史演示数据",
+      "source": "demo",
+      "unit": "示例单位",
+      "date_basis": "演示任务输入时间。",
+      "formula": "采用模拟素材和模拟上架，不代表真实销售数据。",
+      "limitations": "演示数据不与真实经营数据比较。",
+      "comparison": "none"
+    },
+    "operations.running": {
+      "label": "正在执行任务数",
+      "source": "task_records",
+      "unit": "个",
+      "date_basis": "当前任务状态快照。",
+      "formula": "当前状态为queued或running的任务数。",
+      "limitations": "没有历史任务状态快照时，不使用任务创建数量冒充历史待办。",
+      "comparison": "none"
+    },
+    "operations.completed": {
+      "label": "当前已完成任务数",
+      "source": "task_records",
+      "unit": "个",
+      "date_basis": "当前任务状态快照。",
+      "formula": "当前状态为completed的任务记录数，不代表本期新完成数量。",
+      "limitations": "没有历史任务状态快照时，不使用任务创建数量冒充历史待办。",
+      "comparison": "none"
+    },
+    "finance.unknown_net_orders": {
+      "label": "净额未知结算订单数",
+      "source": "finance",
+      "unit": "单",
+      "date_basis": "所选UTC账单生成日期；关联订单可能在更早日期创建。",
+      "formula": "至少一条结算流水未返回净额，不能完成订单净额分类的订单数。",
+      "limitations": "",
+      "comparison": "relative"
+    },
+    "ads.spend": {
+      "label": "广告消耗",
+      "source": "ads_mcp",
+      "unit": "广告账户原币",
+      "date_basis": "每份广告报告所列的广告账户、日期、账户时区、币种和归因窗口。",
+      "formula": "使用广告工具spend字段原值，不冒充净消耗或利润。",
+      "limitations": "自然语言报告未附可核验的基期工具结果时，环比/同比显示未提供，不推断。",
+      "comparison": "relative"
+    },
+    "ads.impressions": {
+      "label": "广告展示次数",
+      "source": "ads_mcp",
+      "unit": "次",
+      "date_basis": "每份广告报告所列的广告账户、日期、账户时区、币种和归因窗口。",
+      "formula": "使用广告工具impressions字段原值。",
+      "limitations": "自然语言报告未附可核验的基期工具结果时，环比/同比显示未提供，不推断。",
+      "comparison": "relative"
+    },
+    "ads.clicks": {
+      "label": "广告点击次数",
+      "source": "ads_mcp",
+      "unit": "次",
+      "date_basis": "每份广告报告所列的广告账户、日期、账户时区、币种和归因窗口。",
+      "formula": "使用广告工具clicks字段原值。",
+      "limitations": "自然语言报告未附可核验的基期工具结果时，环比/同比显示未提供，不推断。",
+      "comparison": "relative"
+    },
+    "ads.conversion": {
+      "label": "平台归因转化数",
+      "source": "ads_mcp",
+      "unit": "次",
+      "date_basis": "每份广告报告所列的广告账户、日期、账户时区、币种和归因窗口。",
+      "formula": "使用广告工具conversion字段原值，不等于店铺全部订单。",
+      "limitations": "自然语言报告未附可核验的基期工具结果时，环比/同比显示未提供，不推断。",
+      "comparison": "relative"
+    },
+    "ads.cost": {
+      "label": "GMV Max 广告消耗",
+      "source": "ads_mcp",
+      "unit": "广告账户原币",
+      "date_basis": "每份广告报告所列的广告账户、日期、账户时区、币种和归因窗口。",
+      "formula": "GMV Max 报告中 metrics.cost 原值；保留账户币种，不与其他币种相加。",
+      "limitations": "只比较同一账户、工具、维度、筛选和归因设置的完整报表；不是订单成本或店铺利润。",
+      "comparison": "relative"
+    },
+    "inventory.transfer_count": {
+      "label": "调拨记录数",
+      "source": "warehouse_records",
+      "unit": "条",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "本工作区全部已保存调拨记录数，包括在途和已收货；不是在途件数。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    },
+    "inventory.reservation_count": {
+      "label": "订单占用记录数",
+      "source": "warehouse_records",
+      "unit": "条",
+      "date_basis": "当前实物账最近一次已知记录，非TikTok商品上架库存。环比取前一日最后记录，同比取去年同日最后记录。",
+      "formula": "本工作区全部已保存订单占用记录数，包括已取消或完成出库记录；不等于当前占用件数。",
+      "limitations": "只汇总已知库存；缺少历史记录不回填为0。",
+      "comparison": "relative"
+    }
+  },
+  "labels": {
+    "已同步订单": "business.orders",
+    "已保存订单": "business.orders",
+    "待履约订单": "business.fulfillment",
+    "待发货 / 待揽收": "business.fulfillment",
+    "运输中": "business.in_transit",
+    "已送达 / 已完成": "business.delivered",
+    "实物可售库存": "inventory.available",
+    "已知可售库存": "inventory.available",
+    "已建档仓库": "inventory.warehouse_count",
+    "内部 SKU": "inventory.sku_count",
+    "待复核库存项": "inventory.review_count",
+    "待处理运营任务": "operations.backlog",
+    "所有状态订单金额": "business.all_status_order_amount",
+    "已支付且未取消": "business.confirmed_paid_non_cancelled_amount",
+    "已知成本订单贡献": "business.estimated_contribution_known_orders",
+    "已知净结算利润": "business.settled_profit_known_orders"
+  },
+  "pages": {
+    "analytics": {
+      "title": "经营看板口径",
+      "text": "所有金额保留店铺原币；订单按店铺当地创建日期、结算按UTC账单日期、平台GMV按支付期。环比为前一等长周期，同比为去年同月同日。未知不补0；比率比较用百分点。"
+    },
+    "orders": {
+      "title": "订单中心口径",
+      "text": "仅展示本页已保存订单；店铺、创建日期、状态、搜索条件影响筛选。创建日期按北京时间，状态取最近同步值。支付总额含平台返回运费和税，不等于GMV、佣金或净结算。单笔订单不与另一笔订单计算增长率。"
+    },
+    "inventory": {
+      "title": "实物库存口径",
+      "text": "实物库存独立于TikTok上架数量。按仓库+SKU记账；可售=max(0,在库−仓库占用−安全库存−本地待确认预留)。缺少盘点不当0。环比比较前一天最后记录，同比比较去年同日最后记录；尚无记录时明确标注。"
+    },
+    "finance": {
+      "title": "成本与利润口径",
+      "text": "本页按原币显示已保存订单及人工确认成本；订单金额、结算、利润是不同指标。未确认完整成本的订单不计入利润。利润不是经营看板的净结算额。"
+    },
+    "overview": {
+      "title": "经营总览口径",
+      "text": "订单来自当前页面保存的业务记录，实物库存来自独立仓库账，待处理任务来自当前任务状态。各模块时间范围不同，不能把它们当同一周期的完整店铺业绩。"
+    },
+    "ads": {
+      "title": "广告数据口径",
+      "text": "每份报告以所列广告账户、账户时区、币种、日期和归因窗口为准。平台ROI/ROAS不等于净利润。没有可核验的上期/去年同期工具数据时不生成环比或同比。"
+    },
+    "operations": {
+      "title": "任务数据口径",
+      "text": "任务数量和执行进度来自本工作区任务记录；进度=已完成步骤/计划步骤，重试次数不是订单数。当前待办是状态快照，没有历史状态不能还原昨天的待办。"
+    },
+    "pricing": {
+      "title": "定价方案口径",
+      "text": "根据当前人工输入的成本、费率和目标利润规则测算，不代表历史成交价或真实利润；输入方案不计算经营环比或同比。"
+    },
+    "chat": {
+      "title": "对话数据口径",
+      "text": "回答中的业务数字应附店铺/广告账户、日期、时区、币种和来源；数字以工具最近一次返回为准。历史对话不是实时数据；没有基期证据不生成环比/同比。"
+    },
+    "legacy": {
+      "title": "演示数据口径",
+      "text": "本页使用模拟任务输入、模拟素材与模拟上架，不代表平台真实订单、库存、收入或利润；不计算真实经营环比/同比。"
+    }
+  }
+}

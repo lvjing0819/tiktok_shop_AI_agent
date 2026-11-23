@@ -1,3 +1,4 @@
+import { MetricHelp } from "./MetricGuide";
 import { useEffect, useState } from "react";
 import type { Api, Run } from "./types";
 import {
@@ -126,17 +127,17 @@ export default function OperationsPanel({
         <div>
           <span className="summary-dot blue" />
           <strong>{runs.filter(running).length}</strong>
-          <span>正在执行</span>
+          <span>正在执行</span><MetricHelp id="operations.running"/>
         </div>
         <div>
           <span className="summary-dot amber" />
           <strong>{runs.filter(waiting).length}</strong>
-          <span>需要关注</span>
+          <span>需要关注</span><MetricHelp id="operations.backlog"/>
         </div>
         <div>
           <span className="summary-dot green" />
           <strong>{runs.filter((r) => r.status === "completed").length}</strong>
-          <span>已完成</span>
+          <span>已完成</span><MetricHelp id="operations.completed"/>
         </div>
         <span className="task-summary-note">任务状态自动更新</span>
       </div>

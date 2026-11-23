@@ -127,7 +127,8 @@ def test_ai_summary_excludes_order_ids_and_buyer_data(client,monkeypatch):
     def complete(role,prompt):
         assert 'private-order-123' not in prompt
         assert 'order_ids' not in prompt and 'recipient_address' not in prompt
-        assert 'previous_coverage' in prompt and 'MYR' in prompt
+        assert 'previous_coverage' in prompt and 'year_ago_coverage' in prompt and 'MYR' in prompt
+        assert 'expense_values' not in prompt
         return '真实汇总解读'
     monkeypatch.setattr('app.model.complete',complete)
     r=client.post('/api/analytics/ask',json={**WINDOW.model_dump(mode='json'),'question':'分析费用'})
@@ -144,10 +145,10 @@ def test_worker_partial_refresh_preserves_last_good_source(client,monkeypatch):
         return {'id':s.key(workspace,shop['id'],source,window.start_date,window.end_date),'shop_id':shop['id'],'source':source,'data':{},'complete':source!='videos','retrieved_at':time.time(),'evidence':[]}
     monkeypatch.setattr(s,'fetch_source',fetch)
     j=s.enqueue('default',WINDOW)
-    for _ in range(10): assert s.process_one()
+    for _ in range(15): assert s.process_one()
     job=store.get(j['id'],'analytics_job')
-    assert job['status']=='partial' and job['progress']==10 and len(job['partial_sources'])==2
-    assert len(job['errors'])==2 and job['errors'][0]['platform_code']==105005
+    assert job['status']=='partial' and job['progress']==15 and len(job['partial_sources'])==3
+    assert len(job['errors'])==3 and job['errors'][0]['platform_code']==105005
     assert s.snapshot('default','1','finance',WINDOW)==old
 
 
@@ -158,12 +159,12 @@ def test_ensure_reuses_running_all_shop_job_for_single_shop_and_previous_window(
     response=client.post('/api/analytics/ensure',json={**WINDOW.model_dump(mode='json'),'site':'MY'})
     assert response.status_code==200
     assert response.json()['job']['id']==active['id'] and response.json()['reason']=='running'
-    assert len(response.json()['missing'])==10
+    assert len(response.json()['missing'])==15
     assert len(store.list_records('analytics_job'))==1
 
 
 def test_ensure_no_remote_refresh_when_complete_or_partial_snapshots_exist(client):
-    for window in (WINDOW,WINDOW.previous()):
+    for window in (WINDOW,WINDOW.previous(),WINDOW.year_ago()):
         for source in s.SOURCES:snapshot(source,{},window,complete=source!='videos')
     result=client.post('/api/analytics/ensure',json=WINDOW.model_dump(mode='json')).json()
     assert result=={'job':None,'missing':[],'reason':'ready'}
@@ -174,7 +175,7 @@ def test_ensure_rollover_enqueues_new_window_and_cools_down_failed_sources(clien
     for source in s.SOURCES:snapshot(source,{},WINDOW)
     shifted=s.Window(start_date='2026-11-15',end_date='2026-11-21')
     result=s.ensure('default',shifted)
-    assert result['reason']=='enqueued' and len(result['missing'])==10
+    assert result['reason']=='enqueued' and len(result['missing'])==15
     assert result['job']['window']['start_date']=='2026-11-15'
     store.remove(result['job']['id'],'analytics_job','default')
     store.save({'id':s.key('default','1','orders',shifted.start_date,shifted.end_date),'status':'failed','attempted_at':time.time()},'analytics_attempt')
@@ -185,7 +186,7 @@ def test_ensure_rollover_enqueues_new_window_and_cools_down_failed_sources(clien
 
 
 def test_ensure_worker_fetches_only_missing_period_sources(client, monkeypatch):
-    for window in (WINDOW, WINDOW.previous()):
+    for window in (WINDOW, WINDOW.previous(), WINDOW.year_ago()):
         for source in s.SOURCES:
             if window == WINDOW.previous() and source in ('orders', 'finance'):
                 continue

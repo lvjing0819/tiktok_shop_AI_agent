@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { MetricHelp } from "./MetricGuide";
 
 export type IconName =
   | "spark"
@@ -342,6 +343,7 @@ export function Metric({
       </div>
       <div className="metric-value">{value}</div>
       <div className="metric-note">{note || "\u00a0"}</div>
+      <MetricHelp label={label}/>
     </article>
   );
 }

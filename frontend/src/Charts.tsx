@@ -1,7 +1,9 @@
+import { DeltaPair, type MetricComparison } from "./MetricGuide";
 import { useState } from "react";
 export function OrderChart({
-  orders,
+  orders, comparisonDays,
 }: {
+  comparisonDays?: ({date:string;count:number}&MetricComparison)[];
   orders: { create_time?: number | null }[];
 }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -139,6 +141,7 @@ export function OrderChart({
           </g>
         ))}
       </svg>
+      <details className="page-metric-guide"><summary>每日数量与环比、同比 ⓘ</summary><p>本图固定近7天、北京时间，沿用店铺、订单状态和订单号筛选。每日环比比较上周同一日，同比比较去年同日；未同步完整时不计算涨跌。</p><div className="table-scroll"><table><thead><tr><th>创建日期</th><th>订单数</th><th>环比 / 同比</th></tr></thead><tbody>{comparisonDays?.map(day=><tr key={day.date}><td>{day.date}</td><td>{day.count}</td><td><DeltaPair comparison={day}/></td></tr>)}</tbody></table></div></details>
     </div>
   );
 }

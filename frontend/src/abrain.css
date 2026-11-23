@@ -602,3 +602,17 @@ body.density-compact {
   color: #9ca8ba;
   margin: 0;
 }
+
+/* Definitions and comparisons stay next to values, with neutral direction colors. */
+.metric-annotation{font-size:11px;line-height:1.55;margin:5px 0 7px;position:relative;z-index:4;max-width:100%;font-weight:400;letter-spacing:normal}
+.metric-annotation-row{display:flex;align-items:flex-start;gap:7px;flex-wrap:wrap}.metric-annotation-row>small{color:#9faabd}
+.metric-comparisons{display:inline-flex;gap:9px;flex-wrap:wrap;font-size:11px;line-height:1.6;font-weight:400;letter-spacing:normal;vertical-align:middle}
+.metric-trend{color:#aab6c8;white-space:normal}.metric-trend b{font-weight:500;color:#d6e4ef}.metric-trend.unknown b{color:#8d9bac}
+.metric-definition{display:inline-block;position:relative;vertical-align:middle;max-width:100%;font-size:11px;line-height:1.6;text-align:left;font-weight:400;letter-spacing:normal}
+.metric-definition>summary{cursor:pointer;color:#87c8cc;list-style:none;white-space:nowrap}.metric-definition>summary:focus-visible{outline:2px solid #5eead4;outline-offset:3px}
+.metric-definition[open]{display:block;width:100%;flex-basis:100%}.metric-definition-body{padding:10px 12px;background:#111a24;border:1px solid #344254;border-radius:9px;color:#c3cfdf;min-width:0;max-width:600px;white-space:normal}.metric-definition-body p{margin:6px 0;font-size:11px;line-height:1.7}
+.dimension-comparisons{font-size:11px;line-height:1.6;margin-top:12px;color:#aab6c8;min-width:0}.dimension-comparisons>summary{cursor:pointer;color:#87c8cc}.dimension-comparisons table{font-size:11px;min-width:490px}.dimension-comparisons td{padding:7px 9px;white-space:normal}
+.page-metric-guide{margin:10px 0 16px;color:#aab6c8;font-size:12px;line-height:1.7}.page-metric-guide>summary{cursor:pointer;color:#8dd5da}.page-metric-guide p{margin:7px 0;max-width:1050px}
+.creator-metric-cell{min-width:150px}.creator-metric-cell .metric-comparisons{display:flex;flex-direction:column;gap:1px}.metric-range-strip{display:flex;flex-wrap:wrap;gap:8px 18px;color:#9faabd;font-size:11px;margin:8px 0}
+@media(max-width:700px){.metric-annotation-row{gap:5px}.metric-comparisons{gap:5px}.metric-definition-body{padding:8px}.kpi-box{min-height:190px}.dimension-comparisons .table-wrap{max-width:100%;overflow:auto}}
+#analyticsMetricGuide .page-metric-guide{margin:0 0 6px}#analyticsMetricGuide .metric-range-strip{margin:4px 0 0}#analyticsMetricGuide{margin:8px 0 12px}

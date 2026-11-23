@@ -1,6 +1,9 @@
+import { pageGuideHtml } from "./metricDisplay.js";
 /** A-Brain uses the existing persistent conversation and routing service. */
 export function initializeHub({ json, resizeCharts }) {
   const $ = (id) => document.getElementById(id);
+  const hero=document.querySelector("#hubView .hero-header");
+  if(hero && !hero.querySelector(".page-metric-guide"))hero.insertAdjacentHTML("beforeend",pageGuideHtml("chat"));
   const agents = {
     leader: { name: "Leader Agent", role: "任务规划与协作", color: "#f8fafc" },
     product: {
