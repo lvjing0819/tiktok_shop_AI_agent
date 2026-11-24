@@ -616,3 +616,6 @@ body.density-compact {
 .creator-metric-cell{min-width:150px}.creator-metric-cell .metric-comparisons{display:flex;flex-direction:column;gap:1px}.metric-range-strip{display:flex;flex-wrap:wrap;gap:8px 18px;color:#9faabd;font-size:11px;margin:8px 0}
 @media(max-width:700px){.metric-annotation-row{gap:5px}.metric-comparisons{gap:5px}.metric-definition-body{padding:8px}.kpi-box{min-height:190px}.dimension-comparisons .table-wrap{max-width:100%;overflow:auto}}
 #analyticsMetricGuide .page-metric-guide{margin:0 0 6px}#analyticsMetricGuide .metric-range-strip{margin:4px 0 0}#analyticsMetricGuide{margin:8px 0 12px}
+
+/* Persistent sync failures remain visible independently of the refresh status. */
+.sync-alert{border:1px solid #c85a64;background:rgba(156,35,52,.14);border-radius:12px;padding:16px 18px;margin:0 0 12px;color:#ffd6d9}.sync-alert p{margin:6px 0}.sync-alert small{color:#d7b9be;line-height:1.6}

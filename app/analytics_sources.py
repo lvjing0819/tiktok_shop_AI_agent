@@ -363,7 +363,12 @@ def process_one():
     job.update(lease_until=0, active_source=None)
     if finished:
         job['finished_at'] = time.time()
-    save()
+    with store.db(write=True) as conn:
+        save(conn)  # Check the lease before committing counters and the job together.
+        if finished:
+            from app import sync_monitor
+            sync_monitor.record_job(conn, workspace, job, job_units(job))
+            save(conn)
     return True
 
 

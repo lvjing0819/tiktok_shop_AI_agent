@@ -234,6 +234,7 @@ def period(workspace, shop, window):
 
 
 def report(workspace, window):
+    from app import sync_monitor
     selected = sources.selected_shops(workspace, window)
     result = []
     for s in selected:
@@ -252,6 +253,7 @@ def report(workspace, window):
                        'comparisons': metrics.build_comparisons(current, previous, year_ago, same_year_length=(window.end_date-window.start_date).days == (window.year_ago().end_date-window.year_ago().start_date).days),
                        'skus': sorted(skus, key=lambda v: -(v['current_units'] or 0))})
     return {'generated_at': time.time(), 'window': window.model_dump(mode='json'), 'previous_window': window.previous().model_dump(mode='json'), 'year_ago_window': window.year_ago().model_dump(mode='json'), 'shops': result,
+            'sync_alerts': sync_monitor.active(workspace, [s['id'] for s in selected]),
             'metric_catalog': metrics.CATALOG,
             'currency_policy': '每家店铺按原币展示，跨币种金额不相加', 'scope': 'date-filtered local facts plus exact platform intervals',
             'capabilities': {'ads_sku_attribution': False, 'logistics_exception_details': False, 'warehouse_api': False},

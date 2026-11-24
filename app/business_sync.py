@@ -67,4 +67,7 @@ def process_one():
             current.update(result,last_attempt_at=now,lease_until=0)
             current['next_at']=time.time()+current['interval_seconds']
             store.put(conn,'order_poll',current,workspace)
+            from app import sync_monitor
+            sync_monitor.record(conn,workspace,'order_poll',config['shop_id'],'orders',str(config['lease_until']),
+                                'complete' if result['last_status']=='completed' else result['last_status'])
     return True

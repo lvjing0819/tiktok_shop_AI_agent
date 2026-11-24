@@ -260,7 +260,20 @@ function definitionIdentity(node) {
   const owner=node.closest("[data-metric-instance],[data-metric-key],[data-metric-for]");
   return [node.dataset.definition,owner?.dataset.metricInstance || owner?.dataset.metricKey || owner?.dataset.metricFor || node.closest("th")?.dataset.metricLabel,node.closest("[data-shop]")?.dataset.shop,node.closest("[data-chart-comparisons]")?.dataset.chartComparisons].join("::");
 }
+function renderSyncAlerts() {
+  let host = $("syncAlerts");
+  if (!host) {
+    host = document.createElement("div");host.id = "syncAlerts";
+    $("dataStatus").insertAdjacentElement("afterend", host);
+  }
+  host.innerHTML = (report?.sync_alerts || []).map(alert => {
+    const shop = report.shops.find(s => s.shop.id === alert.shop_id)?.shop.name || alert.shop_id;
+    const lastSuccess = alert.last_success_at ? new Date(alert.last_success_at * 1000).toLocaleString("zh-CN") : "启用告警后尚无完整成功记录";
+    return `<div class="sync-alert" role="alert"><strong>同步告警 · ${esc(shop)}</strong><p>${esc(alert.message)}</p><small>最近完整成功：${esc(lastSuccess)}。已保留上次成功数据；完整同步成功后自动解除。</small></div>`;
+  }).join("");
+}
 function render() {
+  renderSyncAlerts();
   const expandedDefinitions=new Set([...document.querySelectorAll("#dashboardView .metric-definition[open]")].map(definitionIdentity));
   const restoreDefinitions=()=>{for(const node of document.querySelectorAll("#dashboardView .metric-definition"))if(expandedDefinitions.has(definitionIdentity(node)))node.open=true;};
   if (document.activeElement !== $("startDateInput"))

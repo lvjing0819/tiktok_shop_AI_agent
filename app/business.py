@@ -432,7 +432,8 @@ def dashboard(workspace, **filters):
         if not g['cost_complete_orders']:g['estimated_contribution_known_orders'] = None
         if not g['settled_known_orders']:g['settled_profit_known_orders'] = None
     result = {'generated_at': time.time(), 'inventory': inventory_view(workspace), 'orders': {'count': len(rows), 'status_counts': statuses, 'rows': rows, 'sync': store.list_records('business_sync', workspace), 'polling': store.list_records('order_poll',workspace), 'coverage': 'persisted snapshots only; see each sync date window and completeness'}, 'finance': {'by_currency': groups, 'missing_cost_orders': sum(not r['costs_complete'] for r in rows), 'settlement_api_connected': False, 'cost_source': 'manual', 'note': '订单金额不是结算收入；贡献估算仅含人工确认完整成本的订单。结算利润基于人工录入净结算额，不重复扣平台费与退款。'}}
-    from app import business_metrics
+    from app import business_metrics, sync_monitor
+    result['sync_alerts'] = sync_monitor.active(workspace, [filters['shop_id']] if filters.get('shop_id') else None)
     return business_metrics.decorate(workspace, result, **filters)
 
 

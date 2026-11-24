@@ -129,3 +129,20 @@ test('metric values show server comparisons and preserve an open definition afte
  const rate=$('kpiDeliveredRate').parentElement.querySelector('[data-metric-for="kpiDeliveredRate"]');
  assert.match(rate.textContent,/\+10\.0百分点/);
 });
+
+
+test('failure alert survives progress messages, escapes content and clears on recovery',async t=>{
+ let recovered=false;
+ const {$,timers,wait}=await app(t,(data,url)=>{
+  if(url.pathname.includes('/refresh/'))return {...data,data_version:recovered?2:1};
+  if(url.pathname.endsWith('/dashboard'))data.sync_alerts=recovered?[]:[{id:'alert',shop_id:shop.id,consecutive_failures:10,message:'订单已连续10次同步失败 <img src=x onerror=alert(1)>',last_success_at:null}];
+  return data;
+ });
+ await wait(()=>$('syncAlerts')?.textContent.includes('连续10次'));
+ assert.equal($('syncAlerts').querySelectorAll('[role="alert"]').length,1);
+ assert.equal($('syncAlerts').querySelector('img'),null,'source content must be escaped');
+ assert.match($('dataStatus').textContent,/同步/);
+ assert.match($('syncAlerts').textContent,/启用告警后尚无完整成功记录/);
+ recovered=true;await timers.values().next().value();
+ await wait(()=>$('syncAlerts').children.length===0);
+});

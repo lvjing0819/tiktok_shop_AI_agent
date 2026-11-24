@@ -365,6 +365,9 @@ export default function BusinessPanel({
           )}
         </div>
       </div>
+      {data?.sync_alerts?.map((alert: any) => <div className="toast error" role="alert" key={alert.id}>
+        <Icon name="alert"/><span><strong>同步告警 · {shops.find(s => s.id === alert.shop_id)?.name || alert.shop_id}</strong><br/>{alert.message}<br/><small>已保留上次成功数据；完整同步成功后自动解除。</small></span>
+      </div>)}
       {error && (
         <div className="toast error" role="alert">
           <Icon name="alert" />

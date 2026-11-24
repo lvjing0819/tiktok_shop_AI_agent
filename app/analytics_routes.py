@@ -18,6 +18,11 @@ def router(scope):
     def shops(workspace=Depends(scope)):
         try:return {'shops': s.shops(workspace), 'sources': list(s.SOURCES)}
         except shop_api.ShopError as e:raise HTTPException(409, str(e))
+    @r.get('/api/analytics/alerts')
+    def alerts(site: str = Query(default='ALL', pattern=r'^(ALL|[A-Z]{2})$'), shop_id: str = Query(default='ALL', pattern=r'^(ALL|[0-9]{1,40})$'), workspace=Depends(scope)):
+        from app import sync_monitor
+        selected = [shop for shop in s.shops(workspace) if (site=='ALL' or shop['region']==site) and (shop_id=='ALL' or shop['id']==shop_id)]
+        return {'threshold': sync_monitor.THRESHOLD, 'alerts': sync_monitor.active(workspace, [shop['id'] for shop in selected])}
     def window(start_date: str, end_date: str, site: str = 'ALL', shop_id: str = 'ALL'):
         try:return s.Window(start_date=start_date, end_date=end_date, site=site, shop_id=shop_id)
         except ValueError:raise HTTPException(422, '日期或筛选无效，请选择1至31天且不晚于今天')
