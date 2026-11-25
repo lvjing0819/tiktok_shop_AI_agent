@@ -1,0 +1,94 @@
+# Agent 运行状态、交付物与保留策略
+
+此变更只覆盖 Agent 共用底座与任务中心。经营看板、指标口径和数据源同步不变；选品工具不扩展。执行沙箱、真正的媒体生成/发布和消息队列仍是独立的后续工作，本文不声称它们已经实现。
+
+## 状态与恢复
+
+- `revision` 管理计划版本；`state_version` 管理运行状态。步骤有自己的 `state_version`、稳定的 `execution_id` 和每次领取生成的 `attempt_id`。
+- 所有 Harness 状态写入经统一入口，在数据库事务中校验合法状态转换和旧状态，使用条件更新拒绝覆盖。租约/用量心跳不推进业务状态版本。
+- HTTP 开始、审批、修订、继续与停止必须同时提供 `revision`、`state_version`；任务中心已发送这两个值，过期页面得到409并需刷新。
+- 执行者写结果前校验租约所有者、计划版本、当前尝试和步骤状态。停止任务立即禁止其继续调度/写回；已发出的外部请求不能承诺撤销，会保留 `requires_reconciliation`。
+- 修改计划仅复用内容完全相同、依赖未变化、正文仍可读取的已完成步骤。读取结果超过默认900秒不复用；商品、库存、定价和内容版本变化也使相关草案失效。受影响步骤及其下游使用新的执行身份，审批清空。
+- 补完外部资料可 `resume` 待补充/受阻任务，不重复已完成步骤；要改变参数须先修订计划。暂停期间不累计活跃执行时间。
+- 调用成功结果与单次调用回执一起落盘。检查模型失败或 worker 重启后可复用已落盘结果，避免再次请求外部接口/重复生成。外部写入只有完整成功回执可复用；结果未知禁止自动重试。未落盘响应仍可能重复计费，不承诺 exactly-once。
+- 新任务转换写入 `agent_event`，保留原有事件预览；不保存模型隐藏推理。旧事件迁移不伪造丢失的历史。
+
+## 结果保存与版本
+
+- `agent_artifact`：工作区内按脱敏后规范JSON的校验值复用不可变正文，单正文最多2MB。任务、调用回执和工具日志只保存 `artifact_ref`、简短结论和结果校验状态。
+- 文案/上架草案的正文也使用同一存储；原草稿记录保留索引、版本和引用。相同交付物不会因出现在三处而再复制三次。
+- 过期引用保留校验元信息，旧引用不会因后来产生相同内容而复活。内容相同的不同工作区不共享存储身份。
+- 历史Ads/Social报告与会话记录仍有各自生命周期，本次不重写它们的全部存储；结果去重覆盖运营任务、调用日志/回执和内容/上架草稿。
+- 文案修订产生新正文和新草稿版本，旧任务保留旧版引用。准备上架时同时提供 `content_draft_id`、`content_draft_revision`；缺版本会等待确认，版本变化会拒绝交接。上架草案冻结商品、库存、定价和内容版本。
+- `Tool.output_schema` 声明交付数据契约，所有工具都有统一结果外壳校验；内容与上架草案另有字段校验。工具版本会影响调用回执与结果复用。
+- 任务列表和详情默认不展开大型正文。任务中心按需读取单个步骤完整结果；会话任务状态仅显示每步最多2000字符的数据预览，Leader汇总仍使用限定预览。
+- 当前只接JSON/文案交付，未增加对象存储服务。以后实际媒体应保存在文件/对象存储中，交付物保存地址，不能把大型base64塞进运行状态。
+
+## 记忆
+
+保留原始对话、摘要、最近消息、人工长期偏好四者的独立用途。最近上下文同时限制为最多12条历史消息和默认12000字符；摘要每批原文最多12000字符，每轮至多补三批，摘要覆盖到哪里、是否还有未概括旧消息会明确记录。字符数不是精确token配额。
+
+原始会话不会因为摘要生成而删除。长期偏好仍通过人工编辑更新；新增候选API，候选只能引用本工作区的用户消息，人工接受且偏好版本未变化后才写入。拒绝、旧版本、来源已删除均不能悄悄更新偏好。没有引入自动偏好提取/向量检索，模型建议不会自动成为长期规则。
+
+## 清理策略
+
+默认 `AGENT_CLEANUP_ENABLED=0`。新增代码不会自动删除现有数据。建议先迁移、预览，再通过确认接口或显式配置启用每日清理。
+
+| 配置 | 默认 | 用途 |
+| --- | --- | --- |
+| `AGENT_TRACE_RETENTION_DAYS` | 14 | 已结束任务的普通工具日志 |
+| `AGENT_RESULT_RETENTION_DAYS` | 30 | 结果正文和普通调用回执详情 |
+| `AGENT_SUMMARY_RETENTION_DAYS` | 180 | 任务归档、状态事件、已处理记忆候选 |
+| `AGENT_CLEANUP_GRACE_DAYS` | 7 | 标记待清理后的缓冲期 |
+| `AGENT_READ_RESULT_TTL_SECONDS` | 900 | 修订计划时可复用的读取结果时效 |
+| `MEMORY_RECENT_MAX_CHARS` | 12000 | 最近消息的上下文字符预算 |
+
+清理只访问固定Agent记录类型，绝不操作 `analytics_*`、订单、库存、成本或授权记录。仅 completed/rejected/cancelled 是可清理结束态；failed/blocked/budget_exceeded、待审批、待补充及结果待核对任务均受保护。
+
+保护仍被有效任务引用的正文、当前有效/已审批草稿、有效上架草案引用的内容，以及外部写入证据。历史结束任务的旧引用不永久阻止正文回收；正文过期后返回410，页面可显示已有摘要。废弃草稿要显式归档，仍在使用或已批准的草稿不能直接归档。
+
+执行分两步：先标记，缓冲期后再回收正文/普通日志；正文删除后保留元信息，调用回执可变为expired墓碑，归档任务保留概要且禁止原任务再次开始或修订。外部写入的冻结参数和证据不随普通日志回收，默认人工管理。
+
+每份预览有效1小时，含候选、原因、指纹与逻辑可回收字节估算。执行前重新检查数据和引用，有变化则整次拒绝并要求重新预览。已执行预览可幂等查询。SQLite释放的空间供后续写入复用，数据库文件不会自动缩小；不自动执行VACUUM。
+
+首版清理执行只允许当前已验证的SQLite部署；PostgreSQL支持预览，执行需补并发GC专项验收。周期清理为显式启用功能；没有实现停机/心跳告警。
+
+## 接口
+
+均复用工作区与工作台访问令牌；不提供多租户身份认证。
+
+- `POST /api/operations/{id}/resume`、`/cancel`：`revision`与`state_version`。
+- `GET /api/operations/{id}/steps/{step}/result`：按需读取完整交付物；过期410。
+- `GET /api/operations/{id}/events`：近期状态事件。
+- `GET /api/agent-artifacts/{id}`：工作区内读取不可变结果正文。
+- `PUT /api/agent-drafts/content/{id}`：带草稿revision，提交文本修改；新版本重新待审核。
+- `POST /api/agent-drafts/{content_draft|listing_draft}/{id}/retire`：带草稿revision，显式归档。
+- `POST /api/agent-maintenance/preview`：策略JSON，`{}`使用默认值。
+- `POST /api/agent-maintenance/apply`：提供预览返回的`preview_id`、`confirmation`。
+- `GET/POST /api/memory/candidates`：列出或提交候选，创建参数为field/value/session_id/message_index。
+- `POST /api/memory/candidates/{id}/review`：revision/approved，人工确认或拒绝。
+
+## 迁移与上线
+
+在项目目录运行：
+
+```bash
+# 只读迁移预览，不转换正文
+.venv/bin/python -m scripts.agent_storage migrate
+
+# 停止旧API和worker；备份含授权与经营数据，路径须在Git之外
+.venv/bin/python -m scripts.agent_storage migrate --write --backup /安全的本地目录/shop-before-agent-runtime.sqlite
+
+# 使用新代码一起启动API和worker，保持原8000端口
+.venv/bin/python -m scripts.run
+
+# 清理预览，默认不执行
+.venv/bin/python -m scripts.agent_storage preview
+
+# 仅在检查预览后执行；使用预览实际返回的值
+.venv/bin/python -m scripts.agent_storage apply --preview-id PREVIEW_ID --confirmation CONFIRMATION
+```
+
+迁移按工作区和固定Agent类型分批处理，跳过执行中/排队任务，可重复执行。备份路径必须全新，权限0600。原生接口兼容旧结果读取，但应先迁移并重启旧进程，避免旧代码重新写入内联结果；不要混跑新旧worker。备份及本地预览不得提交Git。
+
+本地验证覆盖去重、跨工作区隔离、旧引用不复活、过期状态/尝试拒写、停止时迟到结果、选择性修订、检查模型失败复用工具回执、外部结果未知保护、输出契约、原始会话保留、记忆候选确认、清理缓冲/引用保护/确认过期、迁移幂等及账本记录不变。

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from jsonschema import Draft202012Validator
 from sqlalchemy import select
 from langgraph.graph import StateGraph, START, END
-from app import store, model, execution_context
+from app import store, model, execution_context, agent_state, agent_artifacts
 from app.tool_registry import ExecutionError
 
 ROLES = Literal['research', 'product', 'content', 'ads']
@@ -95,7 +95,8 @@ def get(key, workspace, conn=None):
     r = store.get(key, 'operation_run', workspace, conn)
     if not r:
         raise LookupError('运营任务不存在')
-    return r
+    r['workspace'] = workspace
+    return agent_state.initialize(r)
 
 
 def lock(conn, key, workspace, owner=None):
@@ -107,7 +108,7 @@ def lock(conn, key, workspace, owner=None):
 
 
 def timeline(run, kind, **fields):
-    run['events'] = (run.get('events', []) + [redact({'at': time.time(), 'kind': kind, **fields})])[-200:]
+    run['events'] = (run.get('events', []) + [redact({'id': str(uuid4()), 'at': time.time(), 'run_status':run['status'], 'kind': kind, **fields})])[-200:]
 
 
 def validate_plan(plan):
@@ -134,48 +135,77 @@ def create(workspace, question, plan, budget=None, session_id=None):
             'status': 'draft' if plan.steps else 'waiting_input', 'steps': {s.id: {'status': 'pending', 'attempts': 0} for s in plan.steps},
             'budget': (budget or Budget()).model_dump(), 'usage': {'model_calls': 0, 'tool_calls': 0, 'remote_calls': 0, 'reported_tokens': 0, 'unreported_usage_calls': 0},
             'active_seconds': 0, 'created_at': time.time(), 'updated_at': time.time(), 'events': [], 'lease_owner': None, 'lease_until': 0, 'approval': None}
+    agent_state.initialize(item)
     timeline(item, 'plan_created', revision=1)
-    return store.save(redact(item), 'operation_run', workspace)
+    with store.db(write=True) as conn:
+        store.put(conn,'operation_run',redact(item),workspace)
+        for event in item['events']:store.put(conn,'agent_event',{**event,'run_id':item['id'],'plan_revision':1,'state_version':1},workspace)
+    return item
 
 
-def revise(workspace, key, revision, plan):
+def revise(workspace, key, revision, plan, state_version=None):
     validate_plan(plan)
     with store.db(write=True) as conn:
         r = lock(conn, key, workspace)
+        agent_state.check_edit(r, state_version)
         if r['revision'] != revision or r['status'] in ('running', 'queued'):
             raise ExecutionError('任务版本已变化或正在执行，请刷新后操作')
         if any(s.get('external_started') for s in r['steps'].values()):
-            raise ExecutionError('已有外部写操作尝试，请先核对平台状态，不可清空计划重新提交')
+            raise ExecutionError('已有外部写操作尝试，请先核对平台状态，不可修改计划')
         value = plan.model_dump()
-        if redact(value)!=value:raise ExecutionError('计划包含敏感字段，拒绝保存或执行')
-        r.update(plan=value, plan_hash=digest(value), revision=revision+1, status='draft' if plan.steps else 'waiting_input', steps={s.id: {'status':'pending','attempts':0} for s in plan.steps}, approval=None)
-        timeline(r, 'plan_revised', revision=r['revision'])
-        store.put(conn, 'operation_run', redact(r), workspace)
+        if redact(value) != value:raise ExecutionError('计划包含敏感字段，拒绝保存或执行')
+        old = {step['id']:step for step in r['plan']['steps']};states = {};reused = []
+        for step in plan.steps:
+            prior = r['steps'].get(step.id, {})
+            valid = prior.get('status') == 'completed' and old.get(step.id) == step.model_dump() and all(dep in reused for dep in step.depends_on)
+            if valid:
+                try:
+                    delivery=agent_artifacts.load(prior.get('result',{}),workspace,conn)
+                    from app.operation_tools import validate_delivery
+                    validate_delivery(step.tool,delivery.get('data',{}),workspace,conn)
+                except ExecutionError:valid = False
+                tool = registry().get(step.tool,step.agent)
+                if prior.get('tool_version',tool.version)!=tool.version:valid=False
+                if tool.effect == 'read' and time.time()-prior.get('ended_at',0) > int(os.getenv('AGENT_READ_RESULT_TTL_SECONDS','900')):valid = False
+            if valid:
+                states[step.id] = {**prior, 'reused_from_revision':revision};reused.append(step.id)
+            else:
+                states[step.id] = {'status':'pending','attempts':0,'state_version':prior.get('state_version',0)+1,'execution_id':str(uuid4()),'attempt_id':None}
+        r.update(plan=value, plan_hash=digest(value), revision=revision+1, status='draft' if plan.steps else 'waiting_input', steps=states, approval=None)
+        for field in ('final_delivery','finalization_status','pending_approval'):r.pop(field,None)
+        timeline(r,'plan_revised',revision=r['revision'],reused_steps=reused)
+        agent_state.save(conn,r,workspace)
         return r
 
 
-def start(workspace, key, revision):
+def start(workspace, key, revision, state_version=None):
     with store.db(write=True) as conn:
         r = lock(conn, key, workspace)
+        agent_state.check_edit(r, state_version)
         if revision != r['revision']:
             raise ExecutionError('任务版本已变化')
         if r['status'] in ('queued', 'running', 'completed'):
             return r
         if r['status'] not in ('draft', 'failed'):
             raise ExecutionError('当前状态不能开始；缺资料请先修改计划，待审核请审批')
-        if any(s.get('external_started') and s['status'] != 'completed' for s in r['steps'].values()):
-            raise ExecutionError('外部操作结果未知，必须先人工核对，不能自动重试')
+        for spec in Plan.model_validate(r['plan']).steps:
+            state=r['steps'][spec.id]
+            if state.get('external_started') and state['status']!='completed':
+                receipt=store.get(call_key(r,spec,resolve(spec,r),registry().get(spec.tool,spec.agent)),'agent_call',workspace,conn)
+                if not receipt or receipt.get('status')!='completed':
+                    raise ExecutionError('外部操作结果未知，必须先人工核对，不能自动重试')
         r.update(status='queued', updated_at=time.time())
         for s in r['steps'].values():
-            if s['status'] == 'failed':s['status'] = 'pending'
+            if s['status'] == 'failed':agent_state.step_change(s,status='pending')
         timeline(r, 'queued')
-        store.put(conn, 'operation_run', r, workspace)
+        agent_state.save(conn,r,workspace)
         return r
 
 
-def approve(workspace, key, revision, approved):
+def approve(workspace, key, revision, approved, state_version=None):
     with store.db(write=True) as conn:
         r = lock(conn, key, workspace)
+        agent_state.check_edit(r,state_version)
         if revision != r['revision'] or r['status'] != 'waiting_approval':
             raise ExecutionError('不是当前版本的待审批任务')
         previous_writes=(r.get('approval') or {}).get('resolved_writes', {})
@@ -185,9 +215,37 @@ def approve(workspace, key, revision, approved):
         r['approval'] = {'revision': revision, 'plan_hash': r['plan_hash'], 'approved': approved, 'at': time.time(), 'resolved_writes': previous_writes}
         r['status'] = 'queued' if approved else 'rejected'
         for s in r['steps'].values():
-            if s['status'] == 'waiting_approval':s['status'] = 'pending'
+            if s['status'] == 'waiting_approval':agent_state.step_change(s,status='pending')
         timeline(r, 'approved' if approved else 'rejected', revision=revision)
-        store.put(conn, 'operation_run', r, workspace)
+        agent_state.save(conn,r,workspace)
+        return r
+
+
+def resume(workspace,key,revision,state_version=None):
+    with store.db(write=True) as conn:
+        r=lock(conn,key,workspace);agent_state.check_edit(r,state_version)
+        if r['revision']!=revision or r['status'] not in ('waiting_input','blocked'):
+            raise ExecutionError('仅待补充或受阻任务可以继续；修改参数请先修订计划')
+        for state in r['steps'].values():
+            if state.get('external_started'):raise ExecutionError('外部操作结果未知，必须先人工核对')
+            if state['status'] in ('waiting_input','blocked'):
+                agent_state.step_change(state,status='pending',execution_id=str(uuid4()),attempt_id=None,attempts=0)
+        r['status']='queued';timeline(r,'resumed')
+        agent_state.save(conn,r,workspace)
+        return r
+
+
+def cancel(workspace,key,revision,state_version=None):
+    with store.db(write=True) as conn:
+        r=lock(conn,key,workspace);agent_state.check_edit(r,state_version)
+        if r['revision']!=revision or r['status'] in ('completed','rejected','cancelled'):
+            raise ExecutionError('任务已结束或版本已变化')
+        r.update(status='cancelled',lease_owner=None,lease_until=0)
+        r['requires_reconciliation']=any(s.get('external_started') for s in r['steps'].values())
+        for state in r['steps'].values():
+            if state['status']!='completed':agent_state.step_change(state,status='cancelled',attempt_id=None)
+        timeline(r,'cancelled',requires_reconciliation=r['requires_reconciliation'])
+        agent_state.save(conn,r,workspace)
         return r
 
 
@@ -195,11 +253,12 @@ def claim():
     with store.db(write=True) as conn:
         rows = conn.execute(select(store.records.c.payload, store.records.c.shop).where(store.records.c.kind == 'operation_run').with_for_update(skip_locked=True)).all()
         for payload, workspace in rows:
-            r = json.loads(payload)
+            r = agent_state.initialize(json.loads(payload))
+            if r.get('archived'):continue
             if r['status'] == 'queued' or (r['status'] == 'running' and r.get('lease_until', 0) < time.time()):
                 owner = str(uuid4());r.update(status='running', lease_owner=owner, lease_until=time.time()+120)
                 timeline(r, 'execution_claimed')
-                store.put(conn, 'operation_run', r, workspace)
+                agent_state.save(conn,r,workspace)
                 return r['id'], workspace, owner
     return None
 
@@ -209,7 +268,7 @@ def renew(key, workspace, owner):
         r = lock(conn, key, workspace, owner)
         if r['status'] != 'running':return False
         r['lease_until'] = time.time()+120
-        store.put(conn, 'operation_run', r, workspace)
+        agent_state.save(conn,r,workspace,bump=False)
         return True
 
 
@@ -218,10 +277,23 @@ class Scope:
         self.key, self.workspace, self.owner = key, workspace, owner
         self.started = time.monotonic()
         self.base_seconds = get(key, workspace)['active_seconds']
+        self.step_id = None
+        self.attempt_id = None
+        self.revision = get(key, workspace)['revision']
+
+    def assert_current(self, conn):
+        r = lock(conn,self.key,self.workspace,self.owner)
+        if r.get('archived') or r['revision'] != self.revision:
+            raise ExecutionError('计划版本已变化，拒绝旧结果')
+        if self.step_id:
+            step = r['steps'].get(self.step_id,{})
+            if r['status'] != 'running' or step.get('attempt_id') != self.attempt_id or step.get('status') != 'running':
+                raise ExecutionError('步骤执行尝试已失效，拒绝旧结果')
+        return r
 
     def change(self, field, amount=1):
         with store.db(write=True) as conn:
-            r = lock(conn, self.key, self.workspace, self.owner)
+            r = self.assert_current(conn)
             elapsed = self.base_seconds + time.monotonic() - self.started
             if elapsed >= r['budget']['max_active_seconds']:
                 raise ExecutionError('已达到任务运行时间预算')
@@ -232,7 +304,7 @@ class Scope:
                 raise ExecutionError('已达到模型已报告用量预算')
             r['usage'][field] += amount
             r['active_seconds'] = elapsed
-            store.put(conn, 'operation_run', r, self.workspace)
+            agent_state.save(conn,r,self.workspace,bump=False)
             return r
 
     def model_start(self, max_tokens):
@@ -256,7 +328,7 @@ def resolve(step, run):
     for key,binding in step.bindings.items():
         source = run['steps'][binding.step]
         if source['status'] != 'completed':raise ExecutionError('依赖任务尚未完成')
-        value = source['result']['data']
+        value = agent_artifacts.load(source['result'],run['workspace'])['data']
         try:
             for part in binding.path:
                 if isinstance(value, list):
@@ -269,50 +341,69 @@ def resolve(step, run):
     return args
 
 
+def call_key(run,step,args,tool):
+    return digest([run['id'],step.id,run['steps'][step.id]['execution_id'],tool.name,tool.version,args])
+
+
 async def gateway(scope, step, args):
-    reg = registry();tool = reg.get(step.tool, step.agent)
+    tool=registry().get(step.tool,step.agent)
     try:Draft202012Validator(tool.schema).validate(args)
     except Exception:raise ExecutionError('工具参数与声明不符，停止执行') from None
     if not tool.available:
-        return {'status':'blocked', 'data':{}, 'data_verified':False, 'summary':tool.description, 'evidence':[]}
-    r = get(scope.key, scope.workspace)
-    binding_hash = digest([r['plan_hash'], step.id, tool.name, tool.version, args])
-    if tool.effect == 'external_write':
-        a = r.get('approval') or {}
-        if not a.get('approved') or a.get('revision') != r['revision'] or a.get('plan_hash') != r['plan_hash']:
-            return {'status':'waiting_approval', 'data':{}, 'data_verified':False, 'summary':'外部写操作需要审批当前计划及交接参数', 'evidence':[]}
-        # Freeze the resolved parameters too; approvals do not authorize changing
-        # arguments through a late model-generated handoff.
-        approved_args = a.get('resolved_writes', {})
-        if approved_args.get(step.id) != binding_hash:
-            return {'status':'waiting_approval', 'data':{}, 'data_verified':False, 'summary':'外部写入参数尚未审批，请核对冻结参数', 'evidence':[]}
-    scope.tool_start()
-    call_id = str(uuid4());at = time.time()
-    trace = {'id':call_id, 'run_id':scope.key, 'revision':r['revision'], 'step_id':step.id, 'agent':step.agent, 'tool':tool.name, 'tool_version':tool.version, 'effect':tool.effect, 'arguments':redact(args), 'started_at':at, 'status':'started', 'binding_hash':binding_hash}
+        return {'status':'blocked','data':{},'data_verified':False,'summary':tool.description,'evidence':[]}
+    r=get(scope.key,scope.workspace)
+    binding_hash=digest([r['plan_hash'],step.id,tool.name,tool.version,args])
+    receipt_id=call_key(r,step,args,tool)
     with store.db(write=True) as conn:
-        current=lock(conn,scope.key,scope.workspace,scope.owner)
-        if tool.effect == 'external_write':
-            current['steps'][step.id]['external_started']=True
-            store.put(conn,'operation_run',current,scope.workspace)
-        store.put(conn,'tool_trace',trace,scope.workspace)
+        current=scope.assert_current(conn)
+        receipt=store.get(receipt_id,'agent_call',scope.workspace,conn)
+        if receipt and receipt['status']=='completed':
+            loaded=agent_artifacts.load(receipt['result'],scope.workspace,conn)
+            from app.operation_tools import validate_delivery
+            validate_delivery(tool.name,loaded.get('data',{}),scope.workspace,conn)
+            return loaded
+        if tool.effect=='external_write':
+            a=current.get('approval') or {}
+            if not a.get('approved') or a.get('revision')!=current['revision'] or a.get('plan_hash')!=current['plan_hash']:
+                return {'status':'waiting_approval','data':{},'data_verified':False,'summary':'外部写操作需要审批当前计划及交接参数','evidence':[]}
+            if a.get('resolved_writes',{}).get(step.id)!=binding_hash:
+                return {'status':'waiting_approval','data':{},'data_verified':False,'summary':'外部写入参数尚未审批，请核对冻结参数','evidence':[]}
+            if current['steps'][step.id].get('external_started'):
+                raise ExecutionError('外部操作结果未知，禁止重复提交')
+            agent_state.step_change(current['steps'][step.id],external_started=True)
+            agent_state.save(conn,current,scope.workspace)
+        store.put(conn,'agent_call',{'id':receipt_id,'run_id':scope.key,'step_id':step.id,'status':'started','effect':tool.effect,'created_at':time.time()},scope.workspace)
+    scope.tool_start()
+    call_id=str(uuid4());at=time.time()
+    trace={'id':call_id,'run_id':scope.key,'revision':r['revision'],'step_id':step.id,'attempt_id':scope.attempt_id,'agent':step.agent,'tool':tool.name,'tool_version':tool.version,'effect':tool.effect,'arguments':redact(args),'started_at':at,'status':'started','binding_hash':binding_hash}
+    with store.db(write=True) as conn:
+        scope.assert_current(conn);store.put(conn,'tool_trace',trace,scope.workspace)
     try:
-        context={'workspace':scope.workspace, 'run_id':scope.key, 'revision':r['revision'], 'step_id':step.id, 'operation_id':digest([scope.key,r['revision'],step.id])}
-        remaining = r['budget']['max_active_seconds'] - r['active_seconds']
-        async with asyncio.timeout(max(0.01,min(tool.timeout_seconds, remaining))):
+        context={'workspace':scope.workspace,'run_id':scope.key,'revision':r['revision'],'step_id':step.id,'attempt_id':scope.attempt_id,'operation_id':receipt_id,'assert_current':scope.assert_current}
+        remaining=r['budget']['max_active_seconds']-r['active_seconds']
+        async with asyncio.timeout(max(.01,min(tool.timeout_seconds,remaining))):
             result=await tool.handler(context,args)
         if not isinstance(result,dict) or result.get('status') not in ('completed','waiting_input','blocked') or not isinstance(result.get('data'),dict):
             raise ExecutionError('工具返回未满足结果契约')
-        if len(json.dumps(result,ensure_ascii=False).encode())>2_000_000:
-            raise ExecutionError('工具结果超出可保存大小')
+        if tool.output_schema and result['status']=='completed':
+            try:Draft202012Validator(tool.output_schema).validate(result['data'])
+            except Exception:raise ExecutionError('工具交付物字段与声明不符') from None
+        if not isinstance(result.get('summary',''),str) or not isinstance(result.get('evidence',[]),list) or type(result.get('data_verified',False)) is not bool:
+            raise ExecutionError('工具结果摘要、来源或验证状态格式无效')
         result=redact(result)
-        trace.update(status=result['status'], result=result, ended_at=time.time(), duration_ms=round((time.time()-at)*1000))
+        result['result_schema_version']=tool.version
         with store.db(write=True) as conn:
-            lock(conn,scope.key,scope.workspace,scope.owner)
+            scope.assert_current(conn)
+            stored=agent_artifacts.pack(conn,scope.workspace,result)
+            trace.update(status=result['status'],result=stored,ended_at=time.time(),duration_ms=round((time.time()-at)*1000))
             store.put(conn,'tool_trace',trace,scope.workspace)
+            if result['status']=='completed':
+                store.put(conn,'agent_call',{'id':receipt_id,'run_id':scope.key,'step_id':step.id,'attempt_id':scope.attempt_id,'status':'completed','effect':tool.effect,'result':stored,'created_at':at,'finished_at':time.time()},scope.workspace)
         return result
     except Exception as exc:
-        trace.update(status='failed', ended_at=time.time(), duration_ms=round((time.time()-at)*1000), error=str(exc) if isinstance(exc,(ExecutionError,model.ModelError)) else '工具执行失败，请查看对应服务与数据源状态')
-        store.save(trace,'tool_trace',scope.workspace)
+        trace.update(status='failed',ended_at=time.time(),duration_ms=round((time.time()-at)*1000),error=str(exc) if isinstance(exc,(ExecutionError,model.ModelError)) else '工具执行失败，请查看对应服务与数据源状态')
+        with store.db(write=True) as conn:
+            store.put(conn,'tool_trace',trace,scope.workspace)
         if isinstance(exc,(ExecutionError,model.ModelError)):raise
         if isinstance(exc,TimeoutError):raise ExecutionError('工具执行超时，已停止本轮') from None
         raise ExecutionError('业务工具执行失败；未用模拟结果替代') from None
@@ -352,42 +443,47 @@ def execute_next(key, workspace, owner):
     try:
         with store.db(write=True) as conn:
             r=lock(conn,key,workspace,owner)
+            if r['status']!='running' or r.get('archived'):raise ExecutionError('任务已停止')
             plan=Plan.model_validate(r['plan'])
             candidates=[s for s in plan.steps if r['steps'][s.id]['status']!='completed' and all(r['steps'][dep]['status']=='completed' for dep in s.depends_on)]
             if not candidates:
                 r['status']='completed' if all(s['status']=='completed' for s in r['steps'].values()) else 'blocked'
-                timeline(r,r['status']);store.put(conn,'operation_run',r,workspace)
+                timeline(r,r['status']);agent_state.save(conn,r,workspace)
                 return
             step=candidates[0]
             state=r['steps'][step.id]
             if state.get('external_started'):
-                raise ExecutionError('外部写操作结果尚未确认，禁止自动重复提交')
+                receipt=store.get(call_key(r,step,resolve(step,r),registry().get(step.tool,step.agent)),'agent_call',workspace,conn)
+                if not receipt or receipt.get('status')!='completed':raise ExecutionError('外部写操作结果尚未确认，禁止自动重复提交')
             if state['attempts']>=3:raise ExecutionError('该步骤已达到重试上限')
             args=resolve(step,r)
-            state.update(status='running',attempts=state['attempts']+1,started_at=time.time())
+            state['tool_version']=registry().get(step.tool,step.agent).version
+            agent_state.step_change(state,status='running',attempts=state['attempts']+1,attempt_id=str(uuid4()),started_at=time.time())
+            scope.step_id=step.id;scope.attempt_id=state['attempt_id']
             timeline(r,'step_started',step=step.id,agent=step.agent)
-            store.put(conn,'operation_run',r,workspace)
+            agent_state.save(conn,r,workspace)
         result=asyncio.run(run_role(scope,step,args))
         with store.db(write=True) as conn:
-            r=lock(conn,key,workspace,owner);state=r['steps'][step.id]
-            state.update(status=result['status'],result=result,ended_at=time.time())
+            r=scope.assert_current(conn);state=r['steps'][step.id]
+            agent_state.step_change(state,status=result['status'],result=result,ended_at=time.time())
             if result['status']=='waiting_approval':
                 resolved_hash=digest([r['plan_hash'],step.id,registry().get(step.tool,step.agent).name,registry().get(step.tool,step.agent).version,args])
                 r['pending_approval']={'step_id':step.id,'arguments':redact(args),'binding_hash':resolved_hash}
             if result['status']!='completed':r['status']=result['status']
             timeline(r,'step_finished',step=step.id,status=result['status'])
             r['active_seconds']=scope.base_seconds+time.monotonic()-scope.started
-            store.put(conn,'operation_run',r,workspace)
+            agent_state.save(conn,r,workspace)
     except Exception as exc:
         with store.db(write=True) as conn:
-            r=lock(conn,key,workspace,owner)
+            try:r=scope.assert_current(conn)
+            except ExecutionError:return  # Cancellation or a newer attempt owns the result now.
             message=str(exc) if isinstance(exc,(ExecutionError,model.ModelError)) else '任务执行失败，请核对输入与服务状态'
             r['status']='budget_exceeded' if '预算' in message else 'failed'
-            for s in r['steps'].values():
-                if s['status']=='running':s.update(status='failed',error=message)
+            if scope.step_id:
+                agent_state.step_change(r['steps'][scope.step_id],status='failed',error=message)
             timeline(r,'execution_failed',error=message)
             r['active_seconds']=scope.base_seconds+time.monotonic()-scope.started
-            store.put(conn,'operation_run',r,workspace)
+            agent_state.save(conn,r,workspace)
     finally:
         execution_context.observer.reset(token)
 
@@ -422,7 +518,7 @@ def process_one():
             r=get(key,workspace,conn)
             if r.get('lease_owner')==owner:
                 r.update(lease_owner=None,lease_until=0,updated_at=time.time())
-                store.put(conn,'operation_run',r,workspace)
+                agent_state.save(conn,r,workspace)
     return True
 
 
@@ -430,7 +526,7 @@ def consolidate(key,workspace,owner):
     """Leader collects persisted deliveries; it cannot add business actions."""
     r=get(key,workspace)
     if r['status']!='completed' or r.get('finalization_status')=='completed':return
-    deliveries=[{'step_id':s['id'],'agent':s['agent'],'goal':s['goal'],'result':r['steps'][s['id']].get('result',{})} for s in r['plan']['steps']]
+    deliveries=[{'step_id':s['id'],'agent':s['agent'],'goal':s['goal'],'result':agent_artifacts.load(r['steps'][s['id']].get('result',{}),workspace)} for s in r['plan']['steps']]
     fallback='\n\n'.join(d['agent']+'：'+(d['result'].get('agent_summary') or d['result'].get('summary','')) for d in deliveries)
     answer={'answer':fallback,'source_steps':[d['step_id'] for d in deliveries],'limitations':['完整数据与接口证据见各步骤交付物。']}
     status='skipped_single_step'
@@ -458,7 +554,7 @@ def consolidate(key,workspace,owner):
     with store.db(write=True) as conn:
         current=lock(conn,key,workspace,owner)
         current.update(final_delivery=redact(answer),finalization_status=status,active_seconds=scope.base_seconds+time.monotonic()-scope.started)
-        store.put(conn,'operation_run',current,workspace)
+        agent_state.save(conn,current,workspace)
 
 
 def metrics(workspace):

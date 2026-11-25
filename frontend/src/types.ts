@@ -12,6 +12,9 @@ export type Session = {
 export type Run = {
   id: string;
   revision: number;
+  state_version: number;
+  archived?: boolean;
+  requires_reconciliation?: boolean;
   question: string;
   status: string;
   created_at: number;
@@ -37,6 +40,7 @@ export type Run = {
       error?: string;
       result?: {
         summary: string;
+        artifact_ref?: {id:string;version:number;checksum:string};
         agent_summary?: string;
         data?: any;
         evidence?: any[];

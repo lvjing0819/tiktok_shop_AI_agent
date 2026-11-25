@@ -240,7 +240,17 @@ async def dispatch(session_id, shop, text, messages, session):
             operation=harness.get(key,shop)
         except LookupError:
             return finish('当前工作区没有该运营任务。','needs_input')
-        summaries=[{'id':k,'status':v['status'],'summary':v.get('result',{}).get('agent_summary') or v.get('result',{}).get('summary'),'error':v.get('error'),'data':v.get('result',{}).get('data'),'evidence':v.get('result',{}).get('evidence',[])} for k,v in operation['steps'].items()]
+        from app import agent_artifacts
+        summaries=[]
+        for step_id,state in operation['steps'].items():
+            result=state.get('result',{})
+            preview={'id':step_id,'status':state['status'],'summary':result.get('agent_summary') or result.get('summary'),'error':state.get('error'),'artifact_ref':result.get('artifact_ref')}
+            try:
+                loaded=agent_artifacts.load(result,shop)
+                raw=json.dumps(loaded.get('data',{}),ensure_ascii=False)
+                preview.update(data_preview=raw[:2000],preview_truncated=len(raw)>2000)
+            except ExecutionError:preview['result_expired']=True
+            summaries.append(preview)
         run.update(operation_id=key,data_verified=any(v.get('result',{}).get('data_verified') for v in operation['steps'].values()))
         detail=json.dumps(summaries,ensure_ascii=False)
         if len(detail)>16000:detail=detail[:16000]+'\n（会话预览已截断，完整结果见运营任务详情）'

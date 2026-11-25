@@ -19,14 +19,16 @@ class Tool:
     timeout_seconds: int = 90
     available: bool = True
     version: str = '1'
+    output_schema: dict | None = None
 
     def __post_init__(self):
         Draft202012Validator.check_schema(self.schema)
+        if self.output_schema:Draft202012Validator.check_schema(self.output_schema)
         if self.effect not in ('read', 'draft', 'external_write'):
             raise ValueError('Unknown tool effect')
 
     def public(self):
-        return {k: getattr(self, k) for k in ('name', 'description', 'agents', 'schema', 'effect', 'timeout_seconds', 'available', 'version')}
+        return {k: getattr(self, k) for k in ('name', 'description', 'agents', 'schema', 'effect', 'timeout_seconds', 'available', 'version', 'output_schema')}
 
 
 class Registry:

@@ -71,6 +71,8 @@ def main():
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     while True:
         try:
+            from app import agent_maintenance
+            agent_maintenance.tick()
             if not process_one():
                 time.sleep(1)
         except Exception:

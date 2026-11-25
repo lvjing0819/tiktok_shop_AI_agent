@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
-from app import harness, leader, store, model
+from app import harness, leader, store, model, agent_artifacts
 from app.tool_registry import ExecutionError
 
 
@@ -11,6 +11,7 @@ class PlanRequest(harness.Strict):
 
 class Revision(harness.Strict):
     revision: int = Field(ge=1)
+    state_version: int = Field(ge=1)
 
 
 class Revise(Revision):
@@ -48,17 +49,40 @@ def router(scope):
         return sorted([t for t in store.list_records('tool_trace',workspace) if t['run_id']==key],key=lambda x:x['started_at'])
     @r.post('/api/operations/{key}/start',status_code=202)
     def start(key:str,body:Revision,workspace=Depends(scope)):
-        try:return harness.start(workspace,key,body.revision)
+        try:return harness.start(workspace,key,body.revision,body.state_version)
         except LookupError as e:raise HTTPException(404,str(e))
         except ExecutionError as e:raise HTTPException(409,str(e))
     @r.put('/api/operations/{key}/plan')
     def revise(key:str,body:Revise,workspace=Depends(scope)):
-        try:return harness.revise(workspace,key,body.revision,body.plan)
+        try:return harness.revise(workspace,key,body.revision,body.plan,body.state_version)
         except LookupError as e:raise HTTPException(404,str(e))
         except ExecutionError as e:raise HTTPException(409,str(e))
     @r.post('/api/operations/{key}/approval',status_code=202)
     def approve(key:str,body:Approval,workspace=Depends(scope)):
-        try:return harness.approve(workspace,key,body.revision,body.approved)
+        try:return harness.approve(workspace,key,body.revision,body.approved,body.state_version)
         except LookupError as e:raise HTTPException(404,str(e))
         except ExecutionError as e:raise HTTPException(409,str(e))
+    @r.post('/api/operations/{key}/resume',status_code=202)
+    def resume(key:str,body:Revision,workspace=Depends(scope)):
+        try:return harness.resume(workspace,key,body.revision,body.state_version)
+        except LookupError as e:raise HTTPException(404,str(e))
+        except ExecutionError as e:raise HTTPException(409,str(e))
+    @r.post('/api/operations/{key}/cancel')
+    def cancel(key:str,body:Revision,workspace=Depends(scope)):
+        try:return harness.cancel(workspace,key,body.revision,body.state_version)
+        except LookupError as e:raise HTTPException(404,str(e))
+        except ExecutionError as e:raise HTTPException(409,str(e))
+    @r.get('/api/operations/{key}/steps/{step_id}/result')
+    def result(key:str,step_id:str,workspace=Depends(scope)):
+        try:run=harness.get(key,workspace)
+        except LookupError as e:raise HTTPException(404,str(e))
+        result=run['steps'].get(step_id,{}).get('result')
+        if not result:raise HTTPException(404,'该步骤尚无交付物')
+        try:return agent_artifacts.load(result,workspace)
+        except ExecutionError as e:raise HTTPException(410,str(e))
+    @r.get('/api/operations/{key}/events')
+    def events(key:str,workspace=Depends(scope)):
+        try:harness.get(key,workspace)
+        except LookupError as e:raise HTTPException(404,str(e))
+        return sorted([e for e in store.list_records('agent_event',workspace) if e['run_id']==key],key=lambda e:e['at'])[-200:]
     return r

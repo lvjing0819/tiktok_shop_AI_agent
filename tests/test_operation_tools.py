@@ -92,7 +92,7 @@ def test_content_draft_reused_and_listing_requires_real_facts_inventory_and_rule
     content=run(tools.content_draft(ctx,{'product_id':p['id'],'market':'MY'}))['data']
     assert content['media_status']=='not_generated' and content['approval_status']=='not_reviewed'
     assert run(tools.content_draft(ctx,{'product_id':p['id'],'market':'MY'}))['data']['id']==content['id'] and len(calls)==1
-    args={'product_id':p['id'],'sku_id':sku['id'],'warehouse_id':wh['id'],'market':'MY','content_draft_id':content['id']}
+    args={'product_id':p['id'],'sku_id':sku['id'],'warehouse_id':wh['id'],'market':'MY','content_draft_id':content['id'],'content_draft_revision':content['revision']}
     assert run(tools.product_draft(ctx,args))['status']=='waiting_input'
     b.set_stock(workspace,b.StockInput(warehouse_id=wh['id'],sku_id=sku['id'],on_hand=30,warehouse_reserved=5,safety_stock=2,expected_revision=0,operation_id='snapshot-test',reason='真实盘点依据'))
     assert run(tools.product_draft(ctx,args))['status']=='waiting_input'

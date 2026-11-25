@@ -79,7 +79,7 @@ def test_waiting_input_and_disabled_are_not_completed(setup):
     client,calls,_=setup
     r=execute(create([spec(tool='read.missing',agent='product')]))
     assert r['status']=='waiting_input' and not calls
-    assert client.post('/api/operations/'+r['id']+'/start',json={'revision':1}).status_code==409
+    assert client.post('/api/operations/'+r['id']+'/start',json={'revision':1,'state_version':harness.get(r['id'],'default')['state_version']}).status_code==409
     r=execute(create([spec(tool='media.disabled',agent='content')]))
     assert r['status']=='blocked' and not calls
 
@@ -88,12 +88,12 @@ def test_exact_revision_and_frozen_arguments_approval(setup):
     client,calls,_=setup
     run=execute(create([spec(tool='write.external',agent='product')]))
     assert run['status']=='waiting_approval' and not calls
-    assert client.post('/api/operations/'+run['id']+'/approval',json={'revision':2,'approved':True}).status_code==409
-    assert client.post('/api/operations/'+run['id']+'/approval',json={'revision':1,'approved':True}).status_code==202
+    assert client.post('/api/operations/'+run['id']+'/approval',json={'revision':2,'state_version':harness.get(run['id'],'default')['state_version'],'approved':True}).status_code==409
+    assert client.post('/api/operations/'+run['id']+'/approval',json={'revision':1,'state_version':harness.get(run['id'],'default')['state_version'],'approved':True}).status_code==202
     assert harness.process_one()
     done=harness.get(run['id'],'default')
     assert done['status']=='completed' and len(calls)==1
-    assert client.put('/api/operations/'+run['id']+'/plan',json={'revision':1,'plan':{'title':'overwrite','steps':[spec().model_dump()]}}).status_code==409
+    assert client.put('/api/operations/'+run['id']+'/plan',json={'revision':1,'state_version':harness.get(run['id'],'default')['state_version'],'plan':{'title':'overwrite','steps':[spec().model_dump()]}}).status_code==409
     assert not harness.process_one()
 
 
@@ -151,7 +151,7 @@ def test_leader_and_plan_api_are_real_model_only(setup,monkeypatch):
     r=client.post('/api/operations/plan',json={'question':'读取一项数据'})
     assert r.status_code==201,r.text
     d=r.json();assert d['status']=='draft' and d['usage']['reported_tokens']==40
-    assert client.post('/api/operations/'+d['id']+'/start',json={'revision':1}).status_code==202
+    assert client.post('/api/operations/'+d['id']+'/start',json={'revision':1,'state_version':d['state_version']}).status_code==202
     monkeypatch.setenv('MODEL_MODE','demo')
     assert client.post('/api/operations/plan',json={'question':'任何任务'}).status_code==502
 

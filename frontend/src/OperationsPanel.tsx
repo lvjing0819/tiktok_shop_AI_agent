@@ -29,12 +29,14 @@ export default function OperationsPanel({
     [search, setSearch] = useState(""),
     [editor, setEditor] = useState(""),
     [traces, setTraces] = useState<any[] | null>(null),
-    [tools, setTools] = useState<any[]>([]);
+    [tools, setTools] = useState<any[]>([]),
+    [deliveries, setDeliveries] = useState<Record<string,any>>({});
   async function select(id: string) {
     const r = await api("/operations/" + id);
     setActive(r);
     setEditor(JSON.stringify(r.plan, null, 2));
     setTraces(null);
+    setDeliveries({});
   }
   useEffect(() => {
     let live = true;
@@ -405,7 +407,8 @@ export default function OperationsPanel({
           <div className="task-timeline">
             {active.plan.steps.map((s, i) => {
               const state = active.steps?.[s.id],
-                result = state?.result;
+                deliveryKey = active.id+":"+s.id+":"+(state?.result?.artifact_ref?.id || ""),
+                result = deliveries[deliveryKey] || state?.result;
               return (
                 <section className="timeline-step" key={s.id}>
                   <span
@@ -439,6 +442,10 @@ export default function OperationsPanel({
                         )}
                         <details className="step-data">
                           <summary>查看交付数据与来源</summary>
+                          {result.artifact_ref && !result.data && <button disabled={busy} className="secondary" onClick={()=>act(async()=>{
+                            const value=await api("/operations/"+active.id+"/steps/"+s.id+"/result");
+                            setDeliveries(previous=>({...previous,[deliveryKey]:value}));
+                          })}>读取完整交付物</button>}
                           {result.data?.rows && (
                             <p>返回 {result.data.rows.length} 条记录</p>
                           )}
@@ -472,7 +479,7 @@ export default function OperationsPanel({
                     act(async () =>
                       setActive(
                         await api("/operations/" + active.id + "/approval", {
-                          revision: active.revision,
+                          revision: active.revision, state_version: active.state_version,
                           approved: true,
                         }),
                       ),
@@ -489,7 +496,7 @@ export default function OperationsPanel({
                     act(async () =>
                       setActive(
                         await api("/operations/" + active.id + "/approval", {
-                          revision: active.revision,
+                          revision: active.revision, state_version: active.state_version,
                           approved: false,
                         }),
                       ),
@@ -501,7 +508,7 @@ export default function OperationsPanel({
               </div>
             </section>
           )}
-          {["draft", "failed"].includes(active.status) && (
+          {!active.archived && ["draft", "failed"].includes(active.status) && (
             <div className="task-action-bar">
               <p>
                 {active.status === "draft"
@@ -514,7 +521,7 @@ export default function OperationsPanel({
                   act(async () =>
                     setActive(
                       await api("/operations/" + active.id + "/start", {
-                        revision: active.revision,
+                        revision: active.revision, state_version: active.state_version,
                       }),
                     ),
                   )
@@ -527,6 +534,12 @@ export default function OperationsPanel({
               </button>
             </div>
           )}
+          {active.archived && <p className="inline-notice">任务已归档，保留概要；重新处理请创建新任务。</p>}
+          {active.state_version != null && !active.archived && ["waiting_input","blocked"].includes(active.status) && <button disabled={busy} onClick={()=>act(async()=>setActive(await api("/operations/"+active.id+"/resume",{revision:active.revision,state_version:active.state_version})))}>已补充资料，继续未完成步骤</button>}
+          {active.state_version != null && !active.archived && !["completed","rejected","cancelled"].includes(active.status) && <button className="secondary" disabled={busy} onClick={()=>{
+            if(confirm("停止后续步骤？已经发出的外部请求可能仍需人工核对。"))act(async()=>setActive(await api("/operations/"+active.id+"/cancel",{revision:active.revision,state_version:active.state_version})));
+          }}>停止任务</button>}
+          {active.requires_reconciliation && <p className="error">停止前已有外部操作尝试，平台实际结果仍需核对。</p>}
           <details>
             <summary>执行用量与记录</summary>
             <div className="execution-stats">
@@ -573,12 +586,12 @@ export default function OperationsPanel({
             />
             <button
               className="secondary"
-              disabled={busy || ["running", "queued"].includes(active.status)}
+              disabled={busy || active.archived || ["running", "queued", "cancelled"].includes(active.status)}
               onClick={() =>
                 act(async () => {
                   const r = await api(
                     "/operations/" + active.id + "/plan",
-                    { revision: active.revision, plan: JSON.parse(editor) },
+                    { revision: active.revision, state_version: active.state_version, plan: JSON.parse(editor) },
                     "PUT",
                   );
                   setActive(r);

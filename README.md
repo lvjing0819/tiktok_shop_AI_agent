@@ -250,3 +250,5 @@ python -m scripts.migrate_legacy /absolute/path/to/old-shop.sqlite
 入口：`/?view=chat` 与 `/?view=overview`。保留工作记忆、广告授权/历史报告和历史模拟任务入口。界面使用真实业务快照，未知库存与利润不补造为0。
 
 Social OAuth 现在将绝对令牌到期时间加密保存；过期或旧记录缺少时间信息时，使用原客户端与原授权范围刷新，再建立 MCP 会话。刷新检查官方 issuer/endpoint，使用数据库租约防止并发轮换，失败时保留原凭据且不扩大权限。此前仅保存相对 expires_in 会导致跨进程载入后误把过期令牌当作有效，随后401触发重新授权。
+
+Agent共用运行底座的状态版本、结果引用、暂停恢复、记忆候选、保留清理及升级说明见 [Agent运行与存储](docs/agent-runtime-v09.md)。实际清理默认关闭，先进行迁移和预览。

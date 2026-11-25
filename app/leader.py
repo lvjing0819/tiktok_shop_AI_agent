@@ -39,7 +39,7 @@ async def plan(workspace,question,budget=None,session_id=None,context=None):
             '内部商品ID与外部竞品ID不同；外部选品结果需用户确认并导入商品档案，不能把竞品ID直接作为内部商品ID。'
             '不掌握店铺ID时，先用shop.discover按市场或店名读取授权店铺，再将后续shop_id绑定该步骤的selected.id；不要让用户重复提供已可发现的信息。'
             '资料缺失时可先读取business.catalog/business.inventory，再等待用户确认，无法拟定有效步骤时steps为空并填写clarification。'
-            '依赖输出用bindings，每个绑定指明依赖step与data中的path；禁止猜测输出路径。商品档案列表是products，单个商品是product，content.draft输出id。'
+            '依赖输出用bindings，每个绑定指明依赖step与data中的path；禁止猜测输出路径。商品档案列表是products，单个商品是product，content.draft输出id和revision；准备上架绑定content_draft_id时，同时将content_draft_revision绑定同一内容步骤的revision，不能猜测版本。'
             '有些能力available=false，若目标依赖这些能力须在计划中列出对应步骤并说明受阻，不可用草稿代替已发布或已生成媒体。'
             '真实发布必须人工审核；Leader没有批准权限。估算销量不是实测，GMV不是利润，TikTok展示库存不是实物库存。'
             '累计销量排序不能设置历史日期。GMV只支持1D/7D/30D，结束日按当前日期之前最近完整日选择；未知数据不填零。'
@@ -65,8 +65,14 @@ async def plan(workspace,question,budget=None,session_id=None,context=None):
         run=harness.create(workspace,question,spec,budget,session_id)
         run['usage'].update(model_calls=usage.calls,reported_tokens=usage.tokens,unreported_usage_calls=usage.missing)
         run['planning_seconds']=time.time()-started
-        from app import store
-        store.save(run,'operation_run',workspace)
-        return run
+        from app import store, agent_state
+        with store.db(write=True) as conn:
+            current=harness.lock(conn,run['id'],workspace)
+            current['usage']['model_calls']+=usage.calls
+            current['usage']['reported_tokens']+=usage.tokens
+            current['usage']['unreported_usage_calls']+=usage.missing
+            current['planning_seconds']=run['planning_seconds']
+            agent_state.save(conn,current,workspace,bump=False)
+        return current
     finally:
         execution_context.observer.reset(token)
