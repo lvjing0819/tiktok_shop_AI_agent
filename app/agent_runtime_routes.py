@@ -2,13 +2,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 from typing import Literal
-from app import agent_artifacts, agent_maintenance, memory, store, harness
+from app import agent_artifacts, agent_maintenance, memory, store, harness, report_retention
 from app.tool_registry import ExecutionError
 
 
 class Cleanup(harness.Strict):
     preview_id: str
     confirmation: str
+
+
+class ReportPin(harness.Strict):
+    retention_revision: int = Field(ge=1)
+    pinned: bool
 
 
 class Candidate(harness.Strict):
@@ -57,6 +62,12 @@ def router(scope):
     def retire(kind:Literal['content_draft','listing_draft'],key:str,body:DraftRevision,workspace=Depends(scope)):
         try:return agent_artifacts.retire_draft(workspace,kind,key,body.revision)
         except LookupError as e:raise HTTPException(404,str(e))
+        except ExecutionError as e:raise HTTPException(409,str(e))
+    @r.put('/api/agent-reports/{kind}/{key}/retention')
+    def pin_report(kind:Literal['ads_report','social_report'],key:str,body:ReportPin,workspace=Depends(scope)):
+        try:return report_retention.pin(key,kind,workspace,body.retention_revision,body.pinned)
+        except LookupError as e:raise HTTPException(404,str(e))
+        except report_retention.ReportExpired as e:raise HTTPException(410,str(e))
         except ExecutionError as e:raise HTTPException(409,str(e))
     @r.post('/api/agent-maintenance/preview')
     def preview(policy:agent_maintenance.Policy,workspace=Depends(scope)):

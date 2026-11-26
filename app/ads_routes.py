@@ -1,3 +1,4 @@
+from app import report_retention
 import asyncio
 import hashlib
 import logging
@@ -95,14 +96,13 @@ def router(scope):
 
     @r.get('/reports')
     def reports(shop=Depends(scope)):
-        return [{k:v for k,v in report.items() if k not in ('evidence','answer')} for report in store.list_records('ads_report',shop)]
+        return [report_retention.metadata(report,'ads_report') for report in store.list_records('ads_report',shop)]
 
     @r.get('/reports/{report_id}')
     def report(report_id: str, shop=Depends(scope)):
-        result = store.get(report_id,'ads_report',shop)
-        if not result:
-            raise HTTPException(404,'分析报告不存在')
-        return result
+        try:return report_retention.get(report_id,'ads_report',shop)
+        except LookupError as exc:raise HTTPException(404,str(exc))
+        except report_retention.ReportExpired as exc:raise HTTPException(410,str(exc))
 
     @r.delete('/reports/{report_id}')
     def remove_report(report_id: str, shop=Depends(scope)):

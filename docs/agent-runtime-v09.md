@@ -18,7 +18,7 @@
 - `agent_artifact`：工作区内按脱敏后规范JSON的校验值复用不可变正文，单正文最多2MB。任务、调用回执和工具日志只保存 `artifact_ref`、简短结论和结果校验状态。
 - 文案/上架草案的正文也使用同一存储；原草稿记录保留索引、版本和引用。相同交付物不会因出现在三处而再复制三次。
 - 过期引用保留校验元信息，旧引用不会因后来产生相同内容而复活。内容相同的不同工作区不共享存储身份。
-- 历史Ads/Social报告与会话记录仍有各自生命周期，本次不重写它们的全部存储；结果去重覆盖运营任务、调用日志/回执和内容/上架草稿。
+- 结果去重覆盖运营任务、调用日志/回执和内容/上架草稿。Ads/Social独立报告接入同一清理调度，具体规则见下文；会话及记忆保留策略暂缓，现有原始消息、摘要和长期偏好不因报告清理而修改。
 - 文案修订产生新正文和新草稿版本，旧任务保留旧版引用。准备上架时同时提供 `content_draft_id`、`content_draft_revision`；缺版本会等待确认，版本变化会拒绝交接。上架草案冻结商品、库存、定价和内容版本。
 - `Tool.output_schema` 声明交付数据契约，所有工具都有统一结果外壳校验；内容与上架草案另有字段校验。工具版本会影响调用回执与结果复用。
 - 任务列表和详情默认不展开大型正文。任务中心按需读取单个步骤完整结果；会话任务状态仅显示每步最多2000字符的数据预览，Leader汇总仍使用限定预览。
@@ -38,6 +38,7 @@
 | --- | --- | --- |
 | `AGENT_TRACE_RETENTION_DAYS` | 14 | 已结束任务的普通工具日志 |
 | `AGENT_RESULT_RETENTION_DAYS` | 30 | 结果正文和普通调用回执详情 |
+| `AGENT_REPORT_RETENTION_DAYS` | 30 | 普通Ads/Social独立报告，从生成时间计算 |
 | `AGENT_SUMMARY_RETENTION_DAYS` | 180 | 任务归档、状态事件、已处理记忆候选 |
 | `AGENT_CLEANUP_GRACE_DAYS` | 7 | 标记待清理后的缓冲期 |
 | `AGENT_READ_RESULT_TTL_SECONDS` | 900 | 修订计划时可复用的读取结果时效 |
@@ -53,6 +54,18 @@
 
 首版清理执行只允许当前已验证的SQLite部署；PostgreSQL支持预览，执行需补并发GC专项验收。周期清理为显式启用功能；没有实现停机/心跳告警。
 
+## Ads／Social报告保留
+
+报告是执行产物，不是自动确认的长期记忆。普通独立报告从`created_at`起满30天进入待清理，默认7天缓冲后回收正文和证据。收藏的报告持续保留；取消收藏会清除旧清理标记，下次到期检查重新给予完整缓冲期。没有有效生成时间的旧记录保留，避免猜测时间误删。
+
+清理前检查未完成/待核对任务的步骤交付和调用回执（兼容旧内联结果与新artifact引用）。仍引用的报告受到保护；执行中的分析尚未落盘、证据损坏或无法判断引用时，保守暂停该类型报告清理。预览后新出现引用或收藏，会使执行整次拒绝并要求重新预览。
+
+回收后只留报告编号、类型、生成时间、过期时间和保留设置版本；报告详情接口返回410，列表带`expired`标志。过期报告无法通过收藏恢复正文。Ads报告页面显示过期提示，提供收藏/取消收藏按钮；Social报告收藏使用下面的接口，未增加新的Social页面。
+
+本轮只回收独立的`ads_report`／`social_report`记录；任务交付物副本继续遵循已有artifact策略。已经写进聊天的分析文字、`conversation_run`、会话摘要和长期偏好都不动。对话读取历史报告时，过期记录不再提供旧证据，不用空值伪装成零指标。收藏保留的是独立报告，不自动永久保留所有调用日志或聊天副本。
+
+沿用每日清理开关，支持只有报告、没有运营任务的工作区。默认开关仍关闭，本轮不对实际数据库执行回收，也不改变并行调度。
+
 ## 接口
 
 均复用工作区与工作台访问令牌；不提供多租户身份认证。
@@ -63,6 +76,7 @@
 - `GET /api/agent-artifacts/{id}`：工作区内读取不可变结果正文。
 - `PUT /api/agent-drafts/content/{id}`：带草稿revision，提交文本修改；新版本重新待审核。
 - `POST /api/agent-drafts/{content_draft|listing_draft}/{id}/retire`：带草稿revision，显式归档。
+- `PUT /api/agent-reports/{ads_report|social_report}/{id}/retention`：`retention_revision`与`pinned`；旧记录默认版本1，修改后递增，过期410、版本冲突409、跨工作区404。
 - `POST /api/agent-maintenance/preview`：策略JSON，`{}`使用默认值。
 - `POST /api/agent-maintenance/apply`：提供预览返回的`preview_id`、`confirmation`。
 - `GET/POST /api/memory/candidates`：列出或提交候选，创建参数为field/value/session_id/message_index。

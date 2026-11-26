@@ -1,3 +1,4 @@
+from app import report_retention
 import asyncio
 import time
 from uuid import uuid4
@@ -168,15 +169,14 @@ def router(scope):
     @r.get("/reports")
     def reports(shop=Depends(scope)):
         return [
-            {k: v for k, v in p.items() if k not in ("evidence", "answer")}
+            report_retention.metadata(p,"social_report")
             for p in store.list_records("social_report", shop)
         ]
 
     @r.get("/reports/{report_id}")
     def report(report_id: str, shop=Depends(scope)):
-        result = store.get(report_id, "social_report", shop)
-        if not result:
-            raise HTTPException(404, "Social 报告不存在")
-        return result
+        try:return report_retention.get(report_id,'social_report',shop)
+        except LookupError as exc:raise HTTPException(404,str(exc))
+        except report_retention.ReportExpired as exc:raise HTTPException(410,str(exc))
 
     return r

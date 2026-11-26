@@ -158,5 +158,6 @@ async def query(shop, question, conversation_context=None):
                     else "请核对权限和参数后重试。"
                 )
             )
+        report.update(retention_revision=1,pinned=False)
         store.save(report, "social_report", shop)
         return report

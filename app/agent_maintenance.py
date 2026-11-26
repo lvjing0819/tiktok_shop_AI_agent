@@ -6,7 +6,7 @@ import time
 from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, delete
-from app import store, agent_artifacts, agent_state
+from app import store, agent_artifacts, agent_state, report_retention
 from app.tool_registry import ExecutionError
 
 DAY = 86400
@@ -20,6 +20,7 @@ class Policy(BaseModel):
     result_days: int = Field(default=30, ge=1, le=3650)
     summary_days: int = Field(default=180, ge=1, le=3650)
     grace_days: int = Field(default=7, ge=1, le=90)
+    report_days: int = Field(default=30, ge=1, le=3650)
 
 
 def scan(kind, workspace, conn=None):
@@ -75,10 +76,18 @@ def inventory(workspace, policy, now, conn):
 
 def candidates(workspace,policy,now,conn):
     runs,protected,ended=inventory(workspace,policy,now,conn)
-    for kind in KINDS:
+    report_ids,blocked_report_kinds=report_retention.protected(workspace,runs,conn)
+    for kind in (*KINDS,*report_retention.KINDS):
         for item in scan(kind,workspace,conn):
             action=None;reason=None
-            if kind=='agent_artifact':
+            if kind in report_retention.KINDS:
+                if item.get('expired') or item.get('pinned') or (kind,item['id']) in report_ids or kind in blocked_report_kinds:continue
+                created=item.get('created_at')
+                if not isinstance(created,(int,float)) or now-created<policy.report_days*DAY:continue
+                if not item.get('cleanup_due_at'):action='mark_record'
+                elif now>=item['cleanup_due_at']:action='expire_report'
+                reason='过期分析报告进入缓冲期，收藏及未完成任务引用受到保护'
+            elif kind=='agent_artifact':
                 if item.get('expired') or item['id'] in protected:continue
                 if now-item['created_at']<policy.result_days*DAY:continue
                 if not item.get('cleanup_due_at'):
@@ -120,7 +129,7 @@ def preview(workspace,policy=None):
         actions=list(candidates(workspace,policy,now,conn))
         report={'id':str(uuid4()),'status':'preview','created_at':now,'expires_at':now+3600,
                 'policy':policy.model_dump(),'actions':actions,
-                'estimated_reclaim_bytes':sum(a['bytes'] for a in actions if a['action'] in ('expire','delete','expire_call'))}
+                'estimated_reclaim_bytes':sum(a['bytes'] for a in actions if a['action'] in ('expire','delete','expire_call','expire_report'))}
         report['confirmation']=fingerprint({'id':report['id'],'policy':report['policy'],'actions':actions})
         store.put(conn,'agent_cleanup_plan',report,workspace)
     return report
@@ -153,6 +162,8 @@ def apply(workspace,preview_id,confirmation):
                 item.pop('payload',None);item.update(expired=True,expired_at=now)
             elif action['action']=='expire_call':
                 item.pop('result',None);item.update(status='expired',expired_at=now)
+            elif action['action']=='expire_report':
+                item=report_retention.tombstone(item,kind,now)
             elif action['action']=='compact_plan':
                 item.pop('actions',None);item.update(compacted=True,compacted_at=now)
             elif action['action']=='archive':
@@ -211,8 +222,8 @@ def tick():
         schedule=store.get('retention','agent_maintenance', 'system',conn) or {'id':'retention','next_at':0}
         if schedule['next_at']>now:return False
         schedule['next_at']=now+DAY;store.put(conn,'agent_maintenance',schedule,'system')
-        workspaces=conn.execute(select(store.records.c.shop).where(store.records.c.kind=='operation_run').distinct()).scalars().all()
-    policy=Policy(trace_days=int(os.getenv('AGENT_TRACE_RETENTION_DAYS','14')),result_days=int(os.getenv('AGENT_RESULT_RETENTION_DAYS','30')),summary_days=int(os.getenv('AGENT_SUMMARY_RETENTION_DAYS','180')),grace_days=int(os.getenv('AGENT_CLEANUP_GRACE_DAYS','7')))
+        workspaces=conn.execute(select(store.records.c.shop).where(store.records.c.kind.in_(('operation_run',*report_retention.KINDS))).distinct()).scalars().all()
+    policy=Policy(trace_days=int(os.getenv('AGENT_TRACE_RETENTION_DAYS','14')),result_days=int(os.getenv('AGENT_RESULT_RETENTION_DAYS','30')),summary_days=int(os.getenv('AGENT_SUMMARY_RETENTION_DAYS','180')),grace_days=int(os.getenv('AGENT_CLEANUP_GRACE_DAYS','7')),report_days=int(os.getenv('AGENT_REPORT_RETENTION_DAYS','30')))
     for workspace in workspaces:
         report=preview(workspace,policy)
         apply(workspace,report['id'],report['confirmation'])

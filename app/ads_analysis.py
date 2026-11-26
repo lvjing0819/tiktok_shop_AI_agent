@@ -260,5 +260,6 @@ async def analyze(
                 "比率只按返回行计算，未跨行或跨页合并",
             ],
         }
+        report.update(retention_revision=1,pinned=False)
         store.save(report, "ads_report", shop)
         return report

@@ -15,6 +15,10 @@ type Report = {
   question: string;
   start_date: string;
   end_date: string;
+  retention_revision?: number;
+  pinned?: boolean;
+  expired?: boolean;
+  created_at?: number;
   answer?: string;
   evidence?: unknown[];
   limitations?: string[];
@@ -281,16 +285,16 @@ export default function AdsPanel({
             <div key={r.id}>
               <button
                 className="session secondary"
-                disabled={busy}
+                disabled={busy || r.expired}
                 onClick={() =>
                   act(async () => {
                     setReport(await api("/ads/reports/" + r.id));
                   })
                 }
               >
-                {r.advertiser_id} · {r.start_date} 至 {r.end_date}
+                {r.expired ? `报告已过期 · ${r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : r.id}` : `${r.pinned ? "已收藏 · " : ""}${r.advertiser_id} · ${r.start_date} 至 ${r.end_date}`}
               </button>
-              <small>{r.question}</small>
+              <small>{r.expired ? "正文和证据已回收，请重新查询。" : r.question}</small>
             </div>
           ))}
         </article>
@@ -299,6 +303,11 @@ export default function AdsPanel({
         <article>
           <div className="row">
             <h2>分析结果</h2>
+            {report.retention_revision != null && <button className="secondary" disabled={busy} onClick={()=>act(async()=>{
+              const saved=await api(`/agent-reports/ads_report/${report.id}/retention`,{retention_revision:report.retention_revision,pinned:!report.pinned},"PUT");
+              setReport({...report,...saved});
+              setReports(await api("/ads/reports"));
+            })}>{report.pinned ? "取消收藏" : "收藏并长期保留"}</button>}
             <button
               className="secondary"
               disabled={busy}
