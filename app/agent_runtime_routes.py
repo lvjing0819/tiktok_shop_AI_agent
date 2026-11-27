@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 from typing import Literal
-from app import agent_artifacts, agent_maintenance, memory, store, harness, report_retention
+from app import agent_artifacts, agent_maintenance, memory, store, harness, report_retention, sandbox
 from app.tool_registry import ExecutionError
 
 
@@ -43,6 +43,14 @@ class DraftRevision(harness.Strict):
 
 def router(scope):
     r=APIRouter(tags=['Agent runtime and retention'])
+    @r.get('/api/sandbox/status')
+    async def sandbox_status(workspace=Depends(scope)):
+        return await sandbox.status()
+    @r.get('/api/operations/{key}/sandboxes')
+    def sandbox_runs(key:str,workspace=Depends(scope)):
+        try:harness.get(key,workspace)
+        except LookupError as e:raise HTTPException(404,str(e))
+        return sorted((item for item in store.list_records('sandbox_run',workspace) if item['run_id']==key),key=lambda i:i['created_at'])[-100:]
     @r.get('/api/agent-artifacts/{key}')
     def artifact(key:str,workspace=Depends(scope)):
         item=store.get(key,'agent_artifact',workspace)

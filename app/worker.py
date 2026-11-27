@@ -69,6 +69,15 @@ def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    def recover_sandboxes():
+        import asyncio
+        from app import sandbox
+        while True:
+            try:asyncio.run(sandbox.recover_expired())
+            except Exception:logger.warning('沙箱回收核对暂未完成')
+            time.sleep(10)
+    # Maintenance must not block order/financial synchronization when Docker is down.
+    threading.Thread(target=recover_sandboxes,daemon=True).start()
     while True:
         try:
             from app import agent_maintenance

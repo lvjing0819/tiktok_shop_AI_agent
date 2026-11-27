@@ -252,3 +252,7 @@ python -m scripts.migrate_legacy /absolute/path/to/old-shop.sqlite
 Social OAuth 现在将绝对令牌到期时间加密保存；过期或旧记录缺少时间信息时，使用原客户端与原授权范围刷新，再建立 MCP 会话。刷新检查官方 issuer/endpoint，使用数据库租约防止并发轮换，失败时保留原凭据且不扩大权限。此前仅保存相对 expires_in 会导致跨进程载入后误把过期令牌当作有效，随后401触发重新授权。
 
 Agent共用运行底座的状态版本、结果引用、暂停恢复、记忆候选、保留清理及升级说明见 [Agent运行与存储](docs/agent-runtime-v09.md)。实际清理默认关闭，先进行迁移和预览。
+
+## v0.10 离线执行沙箱
+
+运营任务的定价计算接入受限Docker执行器，缺少运行环境时明确受阻，不在宿主回退。安装、权限边界与真实验收见 [沙箱说明](docs/sandbox-v10.md)。仅支持固定JSON任务，不代表已开放任意代码执行、媒体生成或User namespace映射。

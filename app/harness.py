@@ -379,7 +379,7 @@ async def gateway(scope, step, args):
     with store.db(write=True) as conn:
         scope.assert_current(conn);store.put(conn,'tool_trace',trace,scope.workspace)
     try:
-        context={'workspace':scope.workspace,'run_id':scope.key,'revision':r['revision'],'step_id':step.id,'attempt_id':scope.attempt_id,'operation_id':receipt_id,'assert_current':scope.assert_current}
+        context={'workspace':scope.workspace,'run_id':scope.key,'revision':r['revision'],'step_id':step.id,'attempt_id':scope.attempt_id,'operation_id':receipt_id,'assert_current':scope.assert_current,'deadline_monotonic':time.monotonic()+min(tool.timeout_seconds,r['budget']['max_active_seconds']-r['active_seconds'])}
         remaining=r['budget']['max_active_seconds']-r['active_seconds']
         async with asyncio.timeout(max(.01,min(tool.timeout_seconds,remaining))):
             result=await tool.handler(context,args)
@@ -402,6 +402,8 @@ async def gateway(scope, step, args):
         return result
     except Exception as exc:
         trace.update(status='failed',ended_at=time.time(),duration_ms=round((time.time()-at)*1000),error=str(exc) if isinstance(exc,(ExecutionError,model.ModelError)) else '工具执行失败，请查看对应服务与数据源状态')
+        from app.sandbox import SandboxError
+        if isinstance(exc,SandboxError):trace['observation']=exc.observation
         with store.db(write=True) as conn:
             store.put(conn,'tool_trace',trace,scope.workspace)
         if isinstance(exc,(ExecutionError,model.ModelError)):raise
@@ -411,7 +413,20 @@ async def gateway(scope, step, args):
 
 async def run_role(scope, step, args):
     """A bounded observe/revise loop; no hidden reasoning is recorded."""
-    result=await gateway(scope,step,args)
+    from app.sandbox import SandboxError
+    try:result=await gateway(scope,step,args)
+    except SandboxError as exc:
+        observation=exc.observation
+        decision={'action':'ask','summary':str(exc)}
+        if observation['code']=='TIMEOUT' and observation['stopped_confirmed']:
+            functions=[{'type':'function','function':{'name':'handle_sandbox_failure','description':'根据超时事实提出后续动作；不改变任务范围或自行重发外部请求。','parameters':{'type':'object','properties':{'action':{'type':'string','enum':['ask','stop']},'summary':{'type':'string','maxLength':1000}},'required':['action','summary'],'additionalProperties':False}}}]
+            try:
+                response=await asyncio.to_thread(model.message,[{'role':'system','content':'沙箱已超时并停止。首版不自动重试，也不改变输入范围或资源上限。依据observation选择ask请求确认或stop结束本轮，只调用handle_sandbox_failure。'}, {'role':'user','content':json.dumps({'goal':step.goal,'observation':observation},ensure_ascii=False)}],functions)
+                calls=response['tool_calls'];assert len(calls)==1 and calls[0]['function']['name']=='handle_sandbox_failure'
+                choice=json.loads(calls[0]['function']['arguments']);Draft202012Validator(functions[0]['function']['parameters']).validate(choice);decision=choice
+            except Exception:pass  # A model failure cannot lose the execution observation.
+        return {'status':'blocked' if observation['code'] in ('RUNTIME_UNAVAILABLE','IMAGE_UNAVAILABLE','CLEANUP_UNCONFIRMED','POLICY_MISMATCH','CREATE_FAILED','RUNTIME_PROTOCOL','RUNTIME_ERROR') or decision['action']=='stop' else 'waiting_input',
+                'data':{'sandbox_observation':observation,'agent_decision':decision},'summary':decision['summary'],'data_verified':False,'evidence':[]}
     if result['status']!='completed':return result
     if step.agent == 'ads' or step.tool == 'social.analyze':
         return result  # Existing specialist already has its own six-call loop.

@@ -29,6 +29,7 @@ export default function OperationsPanel({
     [search, setSearch] = useState(""),
     [editor, setEditor] = useState(""),
     [traces, setTraces] = useState<any[] | null>(null),
+    [sandboxRuns, setSandboxRuns] = useState<any[] | null>(null),
     [tools, setTools] = useState<any[]>([]),
     [deliveries, setDeliveries] = useState<Record<string,any>>({});
   async function select(id: string) {
@@ -36,6 +37,7 @@ export default function OperationsPanel({
     setActive(r);
     setEditor(JSON.stringify(r.plan, null, 2));
     setTraces(null);
+    setSandboxRuns(null);
     setDeliveries({});
   }
   useEffect(() => {
@@ -317,6 +319,7 @@ export default function OperationsPanel({
                 setCreating(false);
                 setQuestion("");
                 setTraces(null);
+    setSandboxRuns(null);
               });
             }}
           >
@@ -540,6 +543,15 @@ export default function OperationsPanel({
             if(confirm("停止后续步骤？已经发出的外部请求可能仍需人工核对。"))act(async()=>setActive(await api("/operations/"+active.id+"/cancel",{revision:active.revision,state_version:active.state_version})));
           }}>停止任务</button>}
           {active.requires_reconciliation && <p className="error">停止前已有外部操作尝试，平台实际结果仍需核对。</p>}
+          {active.plan.steps.some(step=>tools.some(tool=>tool.name===step.tool && tool.execution==='service_with_sandbox')) && <details>
+            <summary>沙箱执行记录</summary>
+            <button className="secondary" disabled={busy} onClick={()=>act(async()=>setSandboxRuns(await api("/operations/"+active.id+"/sandboxes")))}>刷新沙箱记录</button>
+            {sandboxRuns && (sandboxRuns.length ? sandboxRuns.map(item=><div key={item.id}>
+              <p>状态：{item.status} · 耗时：{item.elapsed_seconds ?? "—"} 秒 · 回收：{item.stopped_confirmed ? "已确认" : "待确认"}</p>
+              {item.error_code && <p>原因：{item.error_code}</p>}
+              <details><summary>查看执行元信息</summary><pre>{JSON.stringify(item,null,2)}</pre></details>
+            </div>) : <p>尚无沙箱执行记录。</p>)}
+          </details>}
           <details>
             <summary>执行用量与记录</summary>
             <div className="execution-stats">

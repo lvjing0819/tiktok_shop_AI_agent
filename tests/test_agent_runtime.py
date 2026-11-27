@@ -15,6 +15,12 @@ def env(tmp_path,monkeypatch):
     monkeypatch.setenv('DATABASE_PATH',str(tmp_path/'runtime.sqlite'))
     monkeypatch.setenv('MODEL_MODE','bailian')
     monkeypatch.setenv('AGENT_CLEANUP_ENABLED','0')
+    from app import sandbox
+    import runpy
+    async def fake_job(ctx,job,data):
+        assert job=='pricing_v1'
+        return runpy.run_path('sandbox/worker.py')['pricing'](data)
+    monkeypatch.setattr(sandbox,'run_job',fake_job)
     calls=[]
     async def echo(ctx,args):
         calls.append((ctx,args));execution_context.remote_call('test:read')

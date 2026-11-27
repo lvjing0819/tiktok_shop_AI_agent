@@ -1,9 +1,10 @@
 """Reviewed business tools; unconnected media/publication remain explicit blockers."""
 import asyncio
 import json
+import re
 import time
-from decimal import Decimal, ROUND_UP
-from app import store, model, business, market_tools, shop_read, ads_accounts, ads_analysis, social_agent, agent_artifacts
+from decimal import Decimal
+from app import store, model, business, market_tools, shop_read, ads_accounts, ads_analysis, social_agent, agent_artifacts, sandbox
 from app.tool_registry import Tool, Registry, ExecutionError
 
 
@@ -95,33 +96,49 @@ async def content_draft(ctx,args):
     return completed(item,'已生成文案和素材需求，尚未生成图片或视频，也未发布。')
 
 
+def listing_snapshot(conn,workspace,args):
+    product=business.require(conn,business.goods,workspace,args['product_id'])
+    sku=business.require(conn,business.skus,workspace,args['sku_id'])
+    warehouse=business.require(conn,business.warehouses,workspace,args['warehouse_id'])
+    if sku['product_id']!=product['id']:raise ExecutionError('SKU与商品不匹配')
+    if warehouse['country']!=args['market']:
+        return needs('该仓库不在目标市场，尚未配置跨境履约规则，不能将其库存作为当地现货。')
+    s=business.stock_row(conn,workspace,warehouse['id'],sku['id'])
+    if not s:return needs('该SKU在选定仓库的实物库存未知，请先录入确认库存。')
+    if time.time()-s['updated_at']>86400:return needs('库存记录超过24小时未复核，请先确认盘点数量，不能直接作为当前可售库存。')
+    qty=business.available(conn,s)
+    if qty<=0:return needs('选定仓库的可售库存不足，请先补货或处理库存差异。')
+    pricing=store.get(sku['id']+':'+args['market'],'pricing_profile',workspace,conn)
+    if not pricing:return needs('请先人工录入该SKU在目标市场的成本、币种、费率与利润率规则。')
+    content=agent_artifacts.get_draft(args.get('content_draft_id',''),'content_draft',workspace,conn) if args.get('content_draft_id') else None
+    if args.get('content_draft_id') and args.get('content_draft_revision') is None:return needs('请确认内容草稿的具体版本，不能只提供ID。')
+    if args.get('content_draft_id') and (not content or content['revision']!=args['content_draft_revision'] or content['product_id']!=product['id'] or content['market']!=args['market'] or content['product_revision']!=product['revision']):raise ExecutionError('内容版本与商品、市场或当前商品版本不一致')
+    return {'product':product,'sku':sku,'warehouse':warehouse,'stock':s,'pricing':pricing,'content':content,'available':qty}
+
+
 async def product_draft(ctx,args):
     workspace=ctx['workspace']
+    with store.db() as conn:snapshot=listing_snapshot(conn,workspace,args)
+    if snapshot.get('status'):return snapshot
+    pricing=snapshot['pricing']
+    payload={k:pricing[k] for k in ('unit_cost','logistics','fixed_fees','fee_rate','target_margin')}
+    payload.update(available=snapshot['available'],listing_cap=pricing['listing_cap'])
+    result=await sandbox.run_job(ctx,'pricing_v1',payload)
+    if (set(result)!={'proposed_price','proposed_channel_quantity'}
+        or not isinstance(result['proposed_price'],str) or len(result['proposed_price'])>100 or not re.fullmatch(r'[0-9]+\.[0-9]{2}',result['proposed_price'])
+        or not Decimal(result['proposed_price']).is_finite() or Decimal(result['proposed_price'])<0
+        or type(result['proposed_channel_quantity']) is not int
+        or result['proposed_channel_quantity']!=min(snapshot['available'],pricing['listing_cap'])):
+        raise ExecutionError('沙箱定价交付物不符合业务约束')
     with store.db(write=True) as conn:
         if ctx.get('assert_current'):ctx['assert_current'](conn)
-        product=business.require(conn,business.goods,workspace,args['product_id'])
-        sku=business.require(conn,business.skus,workspace,args['sku_id'])
-        warehouse=business.require(conn,business.warehouses,workspace,args['warehouse_id'])
-        if sku['product_id']!=product['id']:raise ExecutionError('SKU与商品不匹配')
-        if warehouse['country']!=args['market']:
-            return needs('该仓库不在目标市场，尚未配置跨境履约规则，不能将其库存作为当地现货。')
-        s=business.stock_row(conn,workspace,warehouse['id'],sku['id'])
-        if not s:return needs('该SKU在选定仓库的实物库存未知，请先录入确认库存。')
-        if time.time()-s['updated_at']>86400:return needs('库存记录超过24小时未复核，请先确认盘点数量，不能直接作为当前可售库存。')
-        qty=business.available(conn,s)
-        if qty<=0:return needs('选定仓库的可售库存不足，请先补货或处理库存差异。')
-        pricing=store.get(sku['id']+':'+args['market'],'pricing_profile',workspace,conn)
-        if not pricing:return needs('请先人工录入该SKU在目标市场的成本、币种、费率与利润率规则。')
-        content=agent_artifacts.get_draft(args.get('content_draft_id',''),'content_draft',workspace,conn) if args.get('content_draft_id') else None
-        if args.get('content_draft_id') and args.get('content_draft_revision') is None:return needs('请确认内容草稿的具体版本，不能只提供ID。')
-        if args.get('content_draft_id') and (not content or content['revision']!=args['content_draft_revision'] or content['product_id']!=product['id'] or content['market']!=args['market'] or content['product_revision']!=product['revision']):raise ExecutionError('内容版本与商品、市场或当前商品版本不一致')
-        denominator=Decimal(1)-Decimal(pricing['fee_rate'])-Decimal(pricing['target_margin'])
-        if denominator<=0:raise ExecutionError('定价规则无效')
-        price=((Decimal(pricing['unit_cost'])+Decimal(pricing['logistics'])+Decimal(pricing['fixed_fees']))/denominator).quantize(Decimal('.01'),rounding=ROUND_UP)
-        item={'id':'listing:'+ctx['operation_id'],'revision':1,'product_id':product['id'],'sku_id':sku['id'],'market':args['market'],'warehouse_id':warehouse['id'],'product_revision':product['revision'],'stock_revision':s['revision'],'pricing_revision':pricing['revision'],'currency':pricing['currency'],'proposed_price':str(price),'proposed_channel_quantity':min(qty,pricing['listing_cap']),'content_draft_id':content['id'] if content else None,'content_draft_revision':content['revision'] if content else None,'status':'draft','approval_status':'not_reviewed','ready_to_publish':False,'missing':['platform_category_and_required_attributes','generated_and_uploaded_product_images','confirmed_platform_warehouse_mapping'],'created_at':time.time(),'source_run':ctx['run_id']}
+        latest=listing_snapshot(conn,workspace,args)
+        if latest!=snapshot:raise ExecutionError('计算期间商品、SKU、仓库、库存、定价或内容已变化，请修订计划重新准备')
+        product=snapshot['product'];sku=snapshot['sku'];warehouse=snapshot['warehouse'];s=snapshot['stock'];content=snapshot['content']
+        item={'id':'listing:'+ctx['operation_id'],'revision':1,'product_id':product['id'],'sku_id':sku['id'],'market':args['market'],'warehouse_id':warehouse['id'],'product_revision':product['revision'],'stock_revision':s['revision'],'pricing_revision':pricing['revision'],'currency':pricing['currency'],'proposed_price':result['proposed_price'],'proposed_channel_quantity':result['proposed_channel_quantity'],'content_draft_id':content['id'] if content else None,'content_draft_revision':content['revision'] if content else None,'status':'draft','approval_status':'not_reviewed','ready_to_publish':False,'missing':['platform_category_and_required_attributes','generated_and_uploaded_product_images','confirmed_platform_warehouse_mapping'],'created_at':time.time(),'source_run':ctx['run_id']}
         if not content:item['missing'].append('content_draft')
         agent_artifacts.save_draft(conn,'listing_draft',item,workspace)
-    return completed(item,'已生成基于真实库存和人工定价规则的上架草案；缺少平台资料与媒体，不代表已可发布。',True)
+    return completed(item,'已在离线沙箱完成规则定价并准备上架草案；缺少平台资料与媒体，不代表已可发布。',True)
 
 
 async def ads(ctx,args):
@@ -174,7 +191,7 @@ def build_registry():
         Tool('business.dashboard','读取订单、库存、财务数据库快照及数据完整性。',('product','ads','research'),schema({}),dashboard),
         Tool('shop.query','读取授权店铺商品、订单或渠道展示库存。不要把渠道库存当实物。订单需日期。',('product',),schema({'operation':{'type':'string','enum':['products','orders','inventory']},'shop_id':{'type':'string','pattern':r'^[0-9]{1,40}$'},'start_date':DATE,'end_date':DATE,'relative_date':{'type':'string','enum':['today','yesterday','day_before_yesterday']},'timezone':{'type':'string','maxLength':100},'max_pages':{'type':'integer','minimum':1,'maximum':5}},['operation','shop_id']),shop_query,timeout_seconds=240),
         Tool('content.draft','生成文字、图片需求与视频脚本草稿。需要已人工确认的内部product_id。不会生成实际图片/视频。',('content',),schema({'product_id':ID,'market':MARKET,'brief':TEXT},['product_id','market']),content_draft,effect='draft',timeout_seconds=120,output_schema=result_schema({'id':{'type':'string','minLength':1,'maxLength':100},'revision':{'type':'integer'},'product_revision':{'type':'integer'},'title':TEXT,'description':{'type':'string'},'image_briefs':{'type':'array'},'video_script':{'type':'string'},'claims_to_verify':{'type':'array'}},['id','revision','product_revision','title','description','image_briefs','video_script','claims_to_verify'])),
-        Tool('product.prepare_listing','使用内部商品、SKU、实物库存和人工配置定价规则，准备上架草案。不会真实发布。',('product',),schema({'product_id':ID,'sku_id':ID,'warehouse_id':ID,'market':MARKET,'content_draft_id':ID,'content_draft_revision':{'type':'integer','minimum':1}},['product_id','sku_id','warehouse_id','market']),product_draft,effect='draft',output_schema={'type':'object','properties':{'id':{'type':'string','minLength':1,'maxLength':100},'revision':{'type':'integer'},'ready_to_publish':{'type':'boolean'}},'required':['id','revision','ready_to_publish']}),
+        Tool('product.prepare_listing','使用内部商品、SKU、实物库存和人工配置定价规则，准备上架草案。不会真实发布。',('product',),schema({'product_id':ID,'sku_id':ID,'warehouse_id':ID,'market':MARKET,'content_draft_id':ID,'content_draft_revision':{'type':'integer','minimum':1}},['product_id','sku_id','warehouse_id','market']),product_draft,effect='draft',timeout_seconds=150,execution='service_with_sandbox',sandbox_job='pricing_v1',version='2',output_schema={'type':'object','properties':{'id':{'type':'string','minLength':1,'maxLength':100},'revision':{'type':'integer'},'ready_to_publish':{'type':'boolean'}},'required':['id','revision','ready_to_publish']}),
         Tool('ads.analyze','查询指定广告账户、日期的真实数据，提供建议；不修改广告。',('ads',),schema({'account':{'type':'string','minLength':1,'maxLength':200},'question':TEXT,'business_context':{'type':'object','maxProperties':30},'start_date':DATE,'end_date':DATE},['account','question','start_date','end_date']),ads,timeout_seconds=240),
         Tool('social.analyze','查询已授权内容账号、作品或评论并分析，不能发布或修改。',('content',),schema({'question':TEXT},['question']),social,timeout_seconds=240),
         Tool('product.publish','真实商品发布尚未接入；当前必须停止并说明缺少发布适配器。',('product',),schema({'listing_draft_id':ID},['listing_draft_id']),unavailable,effect='external_write',available=False),

@@ -10,6 +10,12 @@ from app.tool_registry import ExecutionError
 def workspace(tmp_path,monkeypatch):
     monkeypatch.delenv('DATABASE_URL',raising=False)
     monkeypatch.setenv('DATABASE_PATH',str(tmp_path/'tools.sqlite'))
+    from app import sandbox
+    import runpy
+    async def fake_job(ctx,job,data):
+        assert job=='pricing_v1'
+        return runpy.run_path('sandbox/worker.py')['pricing'](data)
+    monkeypatch.setattr(sandbox,'run_job',fake_job)
     return 'default'
 
 

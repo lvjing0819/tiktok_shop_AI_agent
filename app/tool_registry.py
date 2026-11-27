@@ -20,15 +20,19 @@ class Tool:
     available: bool = True
     version: str = '1'
     output_schema: dict | None = None
+    execution: str = 'trusted_service'
+    sandbox_job: str | None = None
 
     def __post_init__(self):
         Draft202012Validator.check_schema(self.schema)
         if self.output_schema:Draft202012Validator.check_schema(self.output_schema)
+        if self.execution not in ('trusted_service','service_with_sandbox'):raise ValueError('Unknown execution policy')
+        if (self.execution=='service_with_sandbox' and self.sandbox_job!='pricing_v1') or (self.execution=='trusted_service' and self.sandbox_job is not None):raise ValueError('Invalid sandbox job policy')
         if self.effect not in ('read', 'draft', 'external_write'):
             raise ValueError('Unknown tool effect')
 
     def public(self):
-        return {k: getattr(self, k) for k in ('name', 'description', 'agents', 'schema', 'effect', 'timeout_seconds', 'available', 'version', 'output_schema')}
+        return {k: getattr(self, k) for k in ('name', 'description', 'agents', 'schema', 'effect', 'timeout_seconds', 'available', 'version', 'output_schema', 'execution', 'sandbox_job')}
 
 
 class Registry:
