@@ -425,7 +425,7 @@ async def run_role(scope, step, args):
                 calls=response['tool_calls'];assert len(calls)==1 and calls[0]['function']['name']=='handle_sandbox_failure'
                 choice=json.loads(calls[0]['function']['arguments']);Draft202012Validator(functions[0]['function']['parameters']).validate(choice);decision=choice
             except Exception:pass  # A model failure cannot lose the execution observation.
-        return {'status':'blocked' if observation['code'] in ('RUNTIME_UNAVAILABLE','IMAGE_UNAVAILABLE','CLEANUP_UNCONFIRMED','POLICY_MISMATCH','CREATE_FAILED','RUNTIME_PROTOCOL','RUNTIME_ERROR') or decision['action']=='stop' else 'waiting_input',
+        return {'status':'blocked' if observation['code'] in ('RUNTIME_UNAVAILABLE','IMAGE_UNAVAILABLE','CLEANUP_UNCONFIRMED','POLICY_MISMATCH','CREATE_FAILED','RUNTIME_PROTOCOL','RUNTIME_ERROR','FILE_KEY_UNAVAILABLE','FILE_STORAGE_FAILED') or decision['action']=='stop' else 'waiting_input',
                 'data':{'sandbox_observation':observation,'agent_decision':decision},'summary':decision['summary'],'data_verified':False,'evidence':[]}
     if result['status']!='completed':return result
     if step.agent == 'ads' or step.tool == 'social.analyze':

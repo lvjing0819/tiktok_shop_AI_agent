@@ -1,5 +1,8 @@
 """Fixed offline jobs. No imports from the application, credentials or database."""
 import json
+import base64
+import hashlib
+import stat
 import os
 import resource
 import socket
@@ -19,6 +22,32 @@ def pricing(data):
     if any(type(data[k]) is not int or data[k]<0 for k in ('available','listing_cap')):raise ValueError('Invalid quantity')
     price=((values['unit_cost']+values['logistics']+values['fixed_fees'])/denominator).quantize(Decimal('.01'),rounding=ROUND_UP)
     return {'proposed_price':str(price),'proposed_channel_quantity':min(data['available'],data['listing_cap'])}
+
+
+
+def package_file(folder,name,purpose):
+    # Only regular, single-linked files under this fixed directory may be read.
+    if name not in ('pricing.json','intermediate.json'):raise ValueError('Invalid output path')
+    directory=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=directory)
+        with os.fdopen(fd,'rb') as f:
+            info=os.fstat(f.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_size>8192:raise ValueError('Invalid output file')
+            raw=f.read(8193)
+            if len(raw)>8192:raise ValueError('Output too large')
+    finally:os.close(directory)
+    return {'path':name,'purpose':purpose,'sensitivity':'restricted','media_type':'application/json',
+            'size':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
+            'content_b64':base64.b64encode(raw).decode() if purpose=='output' else None}
+
+
+def pricing_export(data,folder=None):
+    result=pricing(data)
+    folder=Path('/work/output') if folder is None else Path(folder);folder.mkdir(mode=0o700)
+    (folder/'intermediate.json').write_text(json.dumps(data),encoding='utf-8')
+    (folder/'pricing.json').write_text(json.dumps(result,separators=(',',':')),encoding='utf-8')
+    return result
 
 
 def runtime_probe(data):
@@ -81,7 +110,7 @@ def main():
     if len(raw)>65536:raise ValueError('Input too large')
     request=json.loads(raw)
     if set(request)!={'job','data','limits'} or not isinstance(request['data'],dict):raise ValueError('Invalid request')
-    jobs={'pricing_v1':pricing,'selftest_v1':selftest,'oom_probe_v1':oom_probe,'timeout_probe_v1':timeout_probe}
+    jobs={'pricing_v1':pricing,'pricing_export_v1':pricing_export,'selftest_v1':selftest,'oom_probe_v1':oom_probe,'timeout_probe_v1':timeout_probe}
     if request['job'] not in jobs:raise ValueError('Unknown job')
     probe=runtime_probe({})
     limits=probe['limits'];expected=request['limits']
@@ -93,6 +122,8 @@ def main():
         or int(limits['pids.max'])>expected['pids'] or quota/period>expected['nano_cpus']/1_000_000_000):
         raise ValueError('Isolation not enforced')
     answer={'protocol':1,'job':request['job'],'data':jobs[request['job']](request['data'])}
+    if request['job']=='pricing_export_v1':
+        answer['files']=[package_file('/work/output','pricing.json','output'),package_file('/work/output','intermediate.json','temporary')]
     usage=resource.getrusage(resource.RUSAGE_SELF)
     answer['usage']={'cpu_seconds':round(usage.ru_utime+usage.ru_stime,6),'peak_rss_kib':usage.ru_maxrss}
     sys.stdout.write(json.dumps(answer,separators=(',',':'))+'\n')

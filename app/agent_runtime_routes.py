@@ -2,7 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 from typing import Literal
-from app import agent_artifacts, agent_maintenance, memory, store, harness, report_retention, sandbox
+from uuid import UUID
+from fastapi.responses import Response
+from app import agent_artifacts, agent_maintenance, memory, store, harness, report_retention, sandbox, sandbox_files
 from app.tool_registry import ExecutionError
 
 
@@ -13,6 +15,11 @@ class Cleanup(harness.Strict):
 
 class ReportPin(harness.Strict):
     retention_revision: int = Field(ge=1)
+    pinned: bool
+
+
+class FileRetention(harness.Strict):
+    revision: int = Field(ge=1)
     pinned: bool
 
 
@@ -43,6 +50,34 @@ class DraftRevision(harness.Strict):
 
 def router(scope):
     r=APIRouter(tags=['Agent runtime and retention'])
+    @r.get('/api/agent-files/{key}')
+    def file_metadata(key:UUID,workspace=Depends(scope)):
+        try:
+            item=sandbox_files.metadata(str(key),workspace)
+            if item['state']=='staged':raise LookupError('文件尚未交付')
+            return item
+        except LookupError as e:raise HTTPException(404,str(e))
+    @r.get('/api/agent-files/{key}/download')
+    def file_download(key:UUID,workspace=Depends(scope)):
+        try:item,body=sandbox_files.download(str(key),workspace)
+        except LookupError as e:raise HTTPException(404,str(e))
+        except sandbox_files.FileError as e:raise HTTPException(410 if e.code=='FILE_EXPIRED' else 409,str(e))
+        return Response(body,media_type=item['media_type'],headers={'Content-Disposition':'attachment; filename="'+item['name']+'"','X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'"})
+    @r.put('/api/agent-files/{key}/retention')
+    def file_retention(key:UUID,body:FileRetention,workspace=Depends(scope)):
+        try:return sandbox_files.pin(str(key),workspace,body.revision,body.pinned)
+        except LookupError as e:raise HTTPException(404,str(e))
+        except sandbox_files.FileError as e:raise HTTPException(410 if e.code=='FILE_EXPIRED' else 409,str(e))
+    @r.get('/api/agent-files/{key}/events')
+    def file_events(key:UUID,workspace=Depends(scope)):
+        try:sandbox_files.metadata(str(key),workspace)
+        except LookupError as e:raise HTTPException(404,str(e))
+        return sandbox_files.history(workspace,file_id=str(key))
+    @r.get('/api/operations/{key}/file-events')
+    def task_file_events(key:str,workspace=Depends(scope)):
+        try:harness.get(key,workspace)
+        except LookupError as e:raise HTTPException(404,str(e))
+        return sandbox_files.history(workspace,run_id=key)
     @r.get('/api/sandbox/status')
     async def sandbox_status(workspace=Depends(scope)):
         return await sandbox.status()

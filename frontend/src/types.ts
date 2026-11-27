@@ -2,6 +2,7 @@ export type Api = (
   path: string,
   body?: unknown,
   method?: string,
+  responseType?: "json" | "blob",
 ) => Promise<any>;
 export type Session = {
   id: string;

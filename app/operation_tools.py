@@ -4,7 +4,7 @@ import json
 import re
 import time
 from decimal import Decimal
-from app import store, model, business, market_tools, shop_read, ads_accounts, ads_analysis, social_agent, agent_artifacts, sandbox
+from app import store, model, business, market_tools, shop_read, ads_accounts, ads_analysis, social_agent, agent_artifacts, sandbox, sandbox_files
 from app.tool_registry import Tool, Registry, ExecutionError
 
 
@@ -123,7 +123,16 @@ async def product_draft(ctx,args):
     pricing=snapshot['pricing']
     payload={k:pricing[k] for k in ('unit_cost','logistics','fixed_fees','fee_rate','target_margin')}
     payload.update(available=snapshot['available'],listing_cap=pricing['listing_cap'])
-    result=await sandbox.run_job(ctx,'pricing_v1',payload)
+    result=await sandbox.run_job(ctx,'pricing_export_v1' if args.get('export_pricing_report') else 'pricing_v1',payload)
+    refs=result.pop('file_refs',[])
+    try:
+        return await commit_listing(ctx,args,snapshot,result,refs)
+    finally:
+        sandbox_files.discard(ctx,refs)  # Published files are retained; failed staged files are reclaimed.
+
+
+async def commit_listing(ctx,args,snapshot,result,refs):
+    workspace=ctx['workspace'];pricing=snapshot['pricing']
     if (set(result)!={'proposed_price','proposed_channel_quantity'}
         or not isinstance(result['proposed_price'],str) or len(result['proposed_price'])>100 or not re.fullmatch(r'[0-9]+\.[0-9]{2}',result['proposed_price'])
         or not Decimal(result['proposed_price']).is_finite() or Decimal(result['proposed_price'])<0
@@ -136,6 +145,9 @@ async def product_draft(ctx,args):
         if latest!=snapshot:raise ExecutionError('计算期间商品、SKU、仓库、库存、定价或内容已变化，请修订计划重新准备')
         product=snapshot['product'];sku=snapshot['sku'];warehouse=snapshot['warehouse'];s=snapshot['stock'];content=snapshot['content']
         item={'id':'listing:'+ctx['operation_id'],'revision':1,'product_id':product['id'],'sku_id':sku['id'],'market':args['market'],'warehouse_id':warehouse['id'],'product_revision':product['revision'],'stock_revision':s['revision'],'pricing_revision':pricing['revision'],'currency':pricing['currency'],'proposed_price':result['proposed_price'],'proposed_channel_quantity':result['proposed_channel_quantity'],'content_draft_id':content['id'] if content else None,'content_draft_revision':content['revision'] if content else None,'status':'draft','approval_status':'not_reviewed','ready_to_publish':False,'missing':['platform_category_and_required_attributes','generated_and_uploaded_product_images','confirmed_platform_warehouse_mapping'],'created_at':time.time(),'source_run':ctx['run_id']}
+        if refs:
+            sandbox_files.publish(conn,ctx,refs,result)
+            item['file_refs']=refs
         if not content:item['missing'].append('content_draft')
         agent_artifacts.save_draft(conn,'listing_draft',item,workspace)
     return completed(item,'已在离线沙箱完成规则定价并准备上架草案；缺少平台资料与媒体，不代表已可发布。',True)
@@ -164,6 +176,9 @@ def validate_delivery(tool, data, workspace, conn=None):
     current=store.get(data['id'],kind,workspace,conn)
     if not current or current.get('retired') or current.get('revision')!=data.get('revision'):
         raise ExecutionError('交付物草稿版本已变化或已归档，请重新准备')
+    for ref in data.get('file_refs',[]):
+        item=sandbox_files.metadata(ref['file_id'],workspace,conn)
+        if item['state']!='available' or (item['version'],item['checksum'])!=(ref['version'],ref['checksum']):raise ExecutionError('文件交付物已过期或版本不匹配')
     product=business.row(conn,business.goods,workspace,data['product_id'])
     if not product or product['revision']!=data['product_revision']:
         raise ExecutionError('交付物依据的商品版本已变化，请修订计划重新生成')
@@ -176,6 +191,12 @@ def validate_delivery(tool, data, workspace, conn=None):
                 raise ExecutionError('上架草案使用的内容版本已变化')
         if not stock or stock['revision']!=data['stock_revision'] or time.time()-stock['updated_at']>86400 or not pricing or pricing['revision']!=data['pricing_revision']:
             raise ExecutionError('交付物依据的库存或定价已变化，请修订计划重新准备')
+
+
+async def read_pricing_file(ctx,args):
+    try:data=sandbox_files.read_for_agent(ctx,args['file_id'])
+    except LookupError:raise ExecutionError('没有可读取的授权文件') from None
+    return completed(data,'已读取本任务依赖步骤交付的定价文件。',True)
 
 
 async def unavailable(ctx,args):
@@ -191,7 +212,8 @@ def build_registry():
         Tool('business.dashboard','读取订单、库存、财务数据库快照及数据完整性。',('product','ads','research'),schema({}),dashboard),
         Tool('shop.query','读取授权店铺商品、订单或渠道展示库存。不要把渠道库存当实物。订单需日期。',('product',),schema({'operation':{'type':'string','enum':['products','orders','inventory']},'shop_id':{'type':'string','pattern':r'^[0-9]{1,40}$'},'start_date':DATE,'end_date':DATE,'relative_date':{'type':'string','enum':['today','yesterday','day_before_yesterday']},'timezone':{'type':'string','maxLength':100},'max_pages':{'type':'integer','minimum':1,'maximum':5}},['operation','shop_id']),shop_query,timeout_seconds=240),
         Tool('content.draft','生成文字、图片需求与视频脚本草稿。需要已人工确认的内部product_id。不会生成实际图片/视频。',('content',),schema({'product_id':ID,'market':MARKET,'brief':TEXT},['product_id','market']),content_draft,effect='draft',timeout_seconds=120,output_schema=result_schema({'id':{'type':'string','minLength':1,'maxLength':100},'revision':{'type':'integer'},'product_revision':{'type':'integer'},'title':TEXT,'description':{'type':'string'},'image_briefs':{'type':'array'},'video_script':{'type':'string'},'claims_to_verify':{'type':'array'}},['id','revision','product_revision','title','description','image_briefs','video_script','claims_to_verify'])),
-        Tool('product.prepare_listing','使用内部商品、SKU、实物库存和人工配置定价规则，准备上架草案。不会真实发布。',('product',),schema({'product_id':ID,'sku_id':ID,'warehouse_id':ID,'market':MARKET,'content_draft_id':ID,'content_draft_revision':{'type':'integer','minimum':1}},['product_id','sku_id','warehouse_id','market']),product_draft,effect='draft',timeout_seconds=150,execution='service_with_sandbox',sandbox_job='pricing_v1',version='2',output_schema={'type':'object','properties':{'id':{'type':'string','minLength':1,'maxLength':100},'revision':{'type':'integer'},'ready_to_publish':{'type':'boolean'}},'required':['id','revision','ready_to_publish']}),
+        Tool('product.prepare_listing','使用内部商品、SKU、实物库存和人工配置定价规则，准备上架草案，可选export_pricing_report导出定价JSON文件。不会真实发布。',('product',),schema({'product_id':ID,'sku_id':ID,'warehouse_id':ID,'market':MARKET,'content_draft_id':ID,'content_draft_revision':{'type':'integer','minimum':1},'export_pricing_report':{'type':'boolean'}},['product_id','sku_id','warehouse_id','market']),product_draft,effect='draft',timeout_seconds=150,execution='service_with_sandbox',sandbox_job='pricing_v1',version='3',output_schema={'type':'object','properties':{'id':{'type':'string','minLength':1,'maxLength':100},'revision':{'type':'integer'},'ready_to_publish':{'type':'boolean'},'file_refs':{'type':'array','minItems':1,'maxItems':1,'items':{'type':'object','properties':{'file_id':{'type':'string'},'version':{'type':'integer'},'checksum':{'type':'string'}},'required':['file_id','version','checksum'],'additionalProperties':False}}},'required':['id','revision','ready_to_publish']}),
+        Tool('artifact.read_pricing','仅读取本运营任务已完成依赖步骤交付的定价文件。不会读取任意路径或其他任务文件。',('product','content'),schema({'file_id':ID},['file_id']),read_pricing_file),
         Tool('ads.analyze','查询指定广告账户、日期的真实数据，提供建议；不修改广告。',('ads',),schema({'account':{'type':'string','minLength':1,'maxLength':200},'question':TEXT,'business_context':{'type':'object','maxProperties':30},'start_date':DATE,'end_date':DATE},['account','question','start_date','end_date']),ads,timeout_seconds=240),
         Tool('social.analyze','查询已授权内容账号、作品或评论并分析，不能发布或修改。',('content',),schema({'question':TEXT},['question']),social,timeout_seconds=240),
         Tool('product.publish','真实商品发布尚未接入；当前必须停止并说明缺少发布适配器。',('product',),schema({'listing_draft_id':ID},['listing_draft_id']),unavailable,effect='external_write',available=False),

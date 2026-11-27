@@ -40,6 +40,7 @@ async def plan(workspace,question,budget=None,session_id=None,context=None):
             '不掌握店铺ID时，先用shop.discover按市场或店名读取授权店铺，再将后续shop_id绑定该步骤的selected.id；不要让用户重复提供已可发现的信息。'
             '资料缺失时可先读取business.catalog/business.inventory，再等待用户确认，无法拟定有效步骤时steps为空并填写clarification。'
             '依赖输出用bindings，每个绑定指明依赖step与data中的path；禁止猜测输出路径。商品档案列表是products，单个商品是product，content.draft输出id和revision；准备上架绑定content_draft_id时，同时将content_draft_revision绑定同一内容步骤的revision，不能猜测版本。'
+            '需要导出定价报告时，product.prepare_listing设置export_pricing_report=true；输出file_refs[0].file_id。下游artifact.read_pricing的file_id须绑定同一任务已完成直接依赖步骤的这个字段，不猜测其他任务文件ID。文件引用不是宿主文件路径。'
             '有些能力available=false，若目标依赖这些能力须在计划中列出对应步骤并说明受阻，不可用草稿代替已发布或已生成媒体。'
             '真实发布必须人工审核；Leader没有批准权限。估算销量不是实测，GMV不是利润，TikTok展示库存不是实物库存。'
             '累计销量排序不能设置历史日期。GMV只支持1D/7D/30D，结束日按当前日期之前最近完整日选择；未知数据不填零。'

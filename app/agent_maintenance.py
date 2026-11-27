@@ -6,7 +6,7 @@ import time
 from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, delete
-from app import store, agent_artifacts, agent_state, report_retention
+from app import store, agent_artifacts, agent_state, report_retention, sandbox_files
 from app.tool_registry import ExecutionError
 
 DAY = 86400
@@ -77,10 +77,25 @@ def inventory(workspace, policy, now, conn):
 def candidates(workspace,policy,now,conn):
     runs,protected,ended=inventory(workspace,policy,now,conn)
     report_ids,blocked_report_kinds=report_retention.protected(workspace,runs,conn)
-    for kind in (*KINDS,*report_retention.KINDS):
+    protected_files=sandbox_files.protected(workspace,runs,protected,conn)
+    for kind in (*KINDS,*report_retention.KINDS,sandbox_files.KIND,sandbox_files.EVENT):
         for item in scan(kind,workspace,conn):
             action=None;reason=None
-            if kind in report_retention.KINDS:
+            if kind==sandbox_files.KIND:
+                if item['state'] in ('expired','discarded') or protected_files is None or item['id'] in protected_files:continue
+                days=1 if item['state']=='staged' else policy.result_days
+                if now-item['created_at']<days*DAY:continue
+                if not item.get('cleanup_due_at'):action='mark_record'
+                elif now>=item['cleanup_due_at']:action='expire_file'
+                reason='文件产物按期限进入缓冲期，活动依赖与保留标记受到保护'
+            elif kind==sandbox_files.EVENT:
+                if now-item['at']<policy.summary_days*DAY:continue
+                source=runs.get(item.get('run_id'))
+                if source and source['status'] not in CLOSED:continue
+                if not item.get('cleanup_due_at'):action='mark_record'
+                elif now>=item['cleanup_due_at']:action='delete'
+                reason='过期文件生命周期审计，先标记再回收'
+            elif kind in report_retention.KINDS:
                 if item.get('expired') or item.get('pinned') or (kind,item['id']) in report_ids or kind in blocked_report_kinds:continue
                 created=item.get('created_at')
                 if not isinstance(created,(int,float)) or now-created<policy.report_days*DAY:continue
@@ -129,7 +144,7 @@ def preview(workspace,policy=None):
         actions=list(candidates(workspace,policy,now,conn))
         report={'id':str(uuid4()),'status':'preview','created_at':now,'expires_at':now+3600,
                 'policy':policy.model_dump(),'actions':actions,
-                'estimated_reclaim_bytes':sum(a['bytes'] for a in actions if a['action'] in ('expire','delete','expire_call','expire_report'))}
+                'estimated_reclaim_bytes':sum(a['bytes'] for a in actions if a['action'] in ('expire','delete','expire_call','expire_report','expire_file'))}
         report['confirmation']=fingerprint({'id':report['id'],'policy':report['policy'],'actions':actions})
         store.put(conn,'agent_cleanup_plan',report,workspace)
     return report
@@ -162,6 +177,8 @@ def apply(workspace,preview_id,confirmation):
                 item.pop('payload',None);item.update(expired=True,expired_at=now)
             elif action['action']=='expire_call':
                 item.pop('result',None);item.update(status='expired',expired_at=now)
+            elif action['action']=='expire_file':
+                item=sandbox_files.expire(conn,workspace,item)
             elif action['action']=='expire_report':
                 item=report_retention.tombstone(item,kind,now)
             elif action['action']=='compact_plan':
@@ -179,7 +196,9 @@ def apply(workspace,preview_id,confirmation):
             store.put(conn,kind,item,workspace)
         report.update(status='applied',applied_at=now)
         store.put(conn,'agent_cleanup_plan',report,workspace)
-        return report
+    sandbox_files.purge(workspace)
+    sandbox_files.sweep_orphans(workspace)
+    return report
 
 
 def migrate(workspace,*,apply_changes=False):
@@ -222,7 +241,7 @@ def tick():
         schedule=store.get('retention','agent_maintenance', 'system',conn) or {'id':'retention','next_at':0}
         if schedule['next_at']>now:return False
         schedule['next_at']=now+DAY;store.put(conn,'agent_maintenance',schedule,'system')
-        workspaces=conn.execute(select(store.records.c.shop).where(store.records.c.kind.in_(('operation_run',*report_retention.KINDS))).distinct()).scalars().all()
+        workspaces=conn.execute(select(store.records.c.shop).where(store.records.c.kind.in_(('operation_run',*report_retention.KINDS,sandbox_files.KIND,sandbox_files.EVENT))).distinct()).scalars().all()
     policy=Policy(trace_days=int(os.getenv('AGENT_TRACE_RETENTION_DAYS','14')),result_days=int(os.getenv('AGENT_RESULT_RETENTION_DAYS','30')),summary_days=int(os.getenv('AGENT_SUMMARY_RETENTION_DAYS','180')),grace_days=int(os.getenv('AGENT_CLEANUP_GRACE_DAYS','7')),report_days=int(os.getenv('AGENT_REPORT_RETENTION_DAYS','30')))
     for workspace in workspaces:
         report=preview(workspace,policy)

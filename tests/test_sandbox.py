@@ -24,7 +24,7 @@ def run(coro):return asyncio.run(coro)
 
 
 @pytest.fixture
-def engine(monkeypatch):
+def engine(monkeypatch,tmp_path):
     calls=[];state={'container':None,'created':None,'image':'sha256:'+'a'*64,'job':None,'behavior':'ok'}
     def config(args):
         def option(k):return args[args.index(k)+1]
@@ -39,7 +39,7 @@ def engine(monkeypatch):
     async def command(args,**kwargs):
         calls.append((list(args),kwargs))
         if args[0]=='info':return 0,json.dumps({'CgroupVersion':'2','SecurityOptions':['name=seccomp,profile=builtin']}).encode(),b''
-        if args[:2]==['image','inspect']:return 0,json.dumps([{'Id':state['image'],'Config':{'Env':['PATH=/usr/local/bin'],'Labels':{'ai.tiktok.shop.sandbox':'v1'}}}]).encode(),b''
+        if args[:2]==['image','inspect']:return 0,json.dumps([{'Id':state['image'],'Config':{'Env':['PATH=/usr/local/bin'],'Labels':{'ai.tiktok.shop.sandbox':s.IMAGE_VERSION}}}]).encode(),b''
         if args[0]=='create':
             state['container']=config(args);state['created']=copy.deepcopy(state['container'])
             if state.get('mutate'):state['mutate'](state['container'])
@@ -55,10 +55,17 @@ def engine(monkeypatch):
             if state['behavior']=='timeout':raise TimeoutError()
             if state['behavior']=='wait':await asyncio.sleep(100)
             if state.get('after_start'):state['after_start']()
-            data=runpy.run_path('sandbox/worker.py')['pricing'](request['data'])
+            worker=runpy.run_path('sandbox/worker.py')
+            data=worker['pricing'](request['data'])
+            files=None
+            if request['job']=='pricing_export_v1':
+                folder=tmp_path/('output-'+str(len(calls)))
+                data=worker['pricing_export'](request['data'],folder)
+                files=[worker['package_file'](folder,'pricing.json','output'),worker['package_file'](folder,'intermediate.json','temporary')]
             state['container']['State']['Running']=False
             state['container']['State']['OOMKilled']=state['behavior']=='oom'
             result={'protocol':1,'job':request['job'],'data':data,'usage':{'cpu_seconds':.01,'peak_rss_kib':8000}}
+            if files is not None:result['files']=files
             if state['behavior']=='bad_output':result['host_path']='/etc/passwd'
             return 0,json.dumps(result).encode(),b''
         if args[0] in ('stop','kill'):
@@ -270,3 +277,55 @@ def test_recovery_finds_late_created_container_even_after_prior_absence(engine):
     assert state['container'] is None
     state['container']=copy.deepcopy(state['created'])
     assert run(s.recover_expired())==1 and state['container'] is None
+
+
+def test_export_handoff_publishes_only_validated_file_and_rolls_back_stale_data(engine,env,monkeypatch,tmp_path):
+    from cryptography.fernet import Fernet
+    from app import sandbox_files
+    monkeypatch.setenv('SANDBOX_ARTIFACT_DIR',str(tmp_path/'files'))
+    monkeypatch.setenv('SANDBOX_ARTIFACT_KEY',Fernet.generate_key().decode())
+    args={**product_setup(),'export_pricing_report':True}
+    result=run(tools.product_draft({**ctx(),'operation_id':'export'},args))
+    ref=result['data']['file_refs'][0]
+    response=env.get('/api/agent-files/'+ref['file_id']+'/download')
+    assert response.status_code==200 and response.json()['proposed_price']=='21.67'
+    assert sandbox_files.metadata(ref['file_id'],'default')['state']=='available'
+    state,_=engine
+    def change():
+        with store.db(write=True) as conn:conn.execute(b.stock.update().values(revision=2))
+    state['after_start']=change
+    with pytest.raises(s.ExecutionError):run(tools.product_draft({**ctx(),'operation_id':'stale-export'},args))
+    records=store.list_records(sandbox_files.KIND)
+    assert len(records)==2 and any(item['state']=='discarded' and item.get('body_removed_at') for item in records)
+
+
+@pytest.mark.skipif(__import__('os').getenv('RUN_DOCKER_SANDBOX_TESTS')!='1',reason='Real Docker required for file transport acceptance')
+def test_real_docker_file_export(env,monkeypatch,tmp_path):
+    from cryptography.fernet import Fernet
+    monkeypatch.setenv('SANDBOX_ARTIFACT_DIR',str(tmp_path/'files'))
+    monkeypatch.setenv('SANDBOX_ARTIFACT_KEY',Fernet.generate_key().decode())
+    result=run(tools.product_draft({**ctx(),'operation_id':'real-file'}, {**product_setup(),'export_pricing_report':True}))
+    response=env.get('/api/agent-files/'+result['data']['file_refs'][0]['file_id']+'/download')
+    assert response.status_code==200 and response.json()['proposed_price']=='21.67'
+
+
+def test_multi_agent_file_handoff_uses_current_dependency_attempt(engine,env,monkeypatch,tmp_path):
+    from cryptography.fernet import Fernet
+    from app import sandbox_files
+    monkeypatch.setenv('SANDBOX_ARTIFACT_DIR',str(tmp_path/'files'))
+    monkeypatch.setenv('SANDBOX_ARTIFACT_KEY',Fernet.generate_key().decode())
+    def message(messages,functions):
+        name=functions[0]['function']['name']
+        data={'decision':'accept','summary':'Checked'} if name=='review_result' else {'answer':'Done','source_steps':['a','b'],'limitations':[]}
+        return {'tool_calls':[{'function':{'name':name,'arguments':json.dumps(data)}}]}
+    monkeypatch.setattr(model,'message',message)
+    first=h.Step(id='a',agent='product',goal='Prepare and export',tool='product.prepare_listing',arguments={**product_setup(),'export_pricing_report':True},success_criteria='File')
+    second=h.Step(id='b',agent='content',goal='Read pricing',tool='artifact.read_pricing',arguments={},depends_on=['a'],bindings={'file_id':h.Binding(step='a',path=['file_refs',0,'file_id'])},success_criteria='Data')
+    task=h.create('default','Export then read',h.Plan(title='File handoff',steps=[first,second]))
+    h.start('default',task['id'],1);h.process_one()
+    saved=h.get(task['id'],'default')
+    assert saved['status']=='completed'
+    from app import agent_artifacts
+    result=agent_artifacts.load(saved['steps']['b']['result'],'default')
+    assert result['data']['pricing']['proposed_price']=='21.67'
+    assert any(event['action']=='read' and event['actor']=='agent' for event in store.list_records(sandbox_files.EVENT))

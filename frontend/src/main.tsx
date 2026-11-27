@@ -150,7 +150,7 @@ function App() {
     composer = useRef<HTMLTextAreaElement>(null),
     requestVersion = useRef(0);
   const api: Api = useCallback(
-    async (path, body, method) => {
+    async (path, body, method, responseType = "json") => {
       const r = await fetch("/api" + path, {
         method: method || (body === undefined ? "GET" : "POST"),
         headers: {
@@ -160,6 +160,7 @@ function App() {
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
+      if (r.ok && responseType === "blob") return await r.blob();
       const data = await r.json();
       if (!r.ok) {
         if (r.status === 401) setAccess(true);

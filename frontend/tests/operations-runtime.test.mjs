@@ -17,8 +17,12 @@ async function render(t,overrides={}) {
  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,Node:dom.window.Node,MouseEvent:dom.window.MouseEvent,navigator:dom.window.navigator,confirm:()=>true,IS_REACT_ACT_ENVIRONMENT:true,setInterval:callback=>{poll=callback;return 0;},clearInterval:()=>{}}))Object.defineProperty(globalThis,key,{value,writable:true,configurable:true});
  const React=require('react'),{createRoot}=require('react-dom/client'),{default:Panel}=require('../src/OperationsPanel.tsx');
  const logs=[];let run={id:'r1',revision:2,state_version:9,question:'Prepare content',status:'waiting_input',created_at:1,plan:{title:'Task',steps:[{id:'s1',agent:'content',goal:'Copy',tool:'content.draft',arguments:{},bindings:{},depends_on:[],success_criteria:'Draft'}]},steps:{s1:{status:'completed',result:{status:'completed',summary:'Draft ready',artifact_ref:{id:'a1',version:1,checksum:'hash'}}}},usage:{model_calls:1,tool_calls:1,remote_calls:0,reported_tokens:10},...overrides};
+ let file={id:"file",name:"pricing.json",revision:5,pinned:true,state:"available"};
  const api=async(path,body)=>{
   logs.push({path,body:body?JSON.parse(JSON.stringify(body)):body});
+  if(path==='/agent-files/file')return file;
+  if(path==='/agent-files/file/retention')return file={...file,pinned:body.pinned,revision:file.revision+1};
+  if(path==='/agent-files/file/events')return [{action:'published'}];
   if(path==='/operations')return [run];
   if(path==='/operations/tools')return {tools:[]};
   if(path==='/operations/r1')return run;
@@ -72,4 +76,15 @@ test('new delivery versions never display cached earlier result bodies',async t=
  await refresh({revision:3,steps:{s1:{status:'completed',result:{summary:'Revised draft',artifact_ref:{id:'a2',version:1,checksum:'new'}}}}});
  assert.ok(!document.body.textContent.includes('Actual saved title'));
  assert.ok([...document.querySelectorAll('button')].some(b=>b.textContent.includes('读取完整交付物')));
+});
+
+
+test('file retention controls load state before changing the observed version',async t=>{
+ const {document,logs,click}=await render(t,{steps:{s1:{status:'completed',result:{summary:'Exported',data:{file_refs:[{file_id:'file',version:1,checksum:'hash'}]}}}}});
+ assert.ok([...document.querySelectorAll('button')].find(b=>b.textContent.includes('读取信息后设置保留')).disabled);
+ await click('读取文件信息');
+ await click('取消长期保留');
+ assert.deepEqual(logs.find(l=>l.path.endsWith('/retention')).body,{revision:5,pinned:false});
+ await click('文件审计');
+ assert.match(document.body.textContent,/published/);
 });

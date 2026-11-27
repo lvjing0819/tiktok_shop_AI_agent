@@ -31,7 +31,9 @@ export default function OperationsPanel({
     [traces, setTraces] = useState<any[] | null>(null),
     [sandboxRuns, setSandboxRuns] = useState<any[] | null>(null),
     [tools, setTools] = useState<any[]>([]),
-    [deliveries, setDeliveries] = useState<Record<string,any>>({});
+    [deliveries, setDeliveries] = useState<Record<string,any>>({}),
+    [fileMetadata, setFileMetadata] = useState<Record<string,any>>({}),
+    [fileEvents, setFileEvents] = useState<Record<string,any[]>>({});
   async function select(id: string) {
     const r = await api("/operations/" + id);
     setActive(r);
@@ -39,6 +41,8 @@ export default function OperationsPanel({
     setTraces(null);
     setSandboxRuns(null);
     setDeliveries({});
+    setFileMetadata({});
+    setFileEvents({});
   }
   useEffect(() => {
     let live = true;
@@ -449,6 +453,24 @@ export default function OperationsPanel({
                             const value=await api("/operations/"+active.id+"/steps/"+s.id+"/result");
                             setDeliveries(previous=>({...previous,[deliveryKey]:value}));
                           })}>读取完整交付物</button>}
+                          {result.data?.file_refs?.map((ref:any)=><div key={ref.file_id}>
+                            <p>文件交付物：{fileMetadata[ref.file_id]?.name || "定价报告"} · {!fileMetadata[ref.file_id] ? "保留状态待读取" : fileMetadata[ref.file_id].state!=="available" ? "文件已过期或回收" : fileMetadata[ref.file_id].pinned ? "长期保留" : "按产物期限保留"}</p>
+                            <button disabled={busy} className="secondary" onClick={()=>act(async()=>{const metadata=await api("/agent-files/"+ref.file_id);setFileMetadata(old=>({...old,[ref.file_id]:metadata}));})}>读取文件信息</button>
+                            <button disabled={busy || (fileMetadata[ref.file_id] && fileMetadata[ref.file_id].state!=="available")} className="secondary" onClick={()=>act(async()=>{
+                              const metadata=await api("/agent-files/"+ref.file_id);
+                              const blob=await api("/agent-files/"+ref.file_id+"/download",undefined,"GET","blob");
+                              const url=URL.createObjectURL(blob),link=document.createElement("a");
+                              link.href=url;link.download=metadata.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+                              setFileMetadata(old=>({...old,[ref.file_id]:metadata}));
+                            })}>下载文件</button>
+                            <button disabled={busy || !fileMetadata[ref.file_id] || fileMetadata[ref.file_id].state!=="available"} className="secondary" onClick={()=>act(async()=>{
+                              const metadata=fileMetadata[ref.file_id];
+                              const updated=await api("/agent-files/"+ref.file_id+"/retention",{revision:metadata.revision,pinned:!metadata.pinned},"PUT");
+                              setFileMetadata(old=>({...old,[ref.file_id]:updated}));
+                            })}>{!fileMetadata[ref.file_id] ? "读取信息后设置保留" : fileMetadata[ref.file_id].pinned ? "取消长期保留" : "长期保留"}</button>
+                            <button disabled={busy} className="secondary" onClick={()=>act(async()=>{const events=await api("/agent-files/"+ref.file_id+"/events");setFileEvents(old=>({...old,[ref.file_id]:events}));})}>文件审计</button>
+                            {fileEvents[ref.file_id] && <pre>{JSON.stringify(fileEvents[ref.file_id],null,2)}</pre>}
+                          </div>)}
                           {result.data?.rows && (
                             <p>返回 {result.data.rows.length} 条记录</p>
                           )}
@@ -551,6 +573,11 @@ export default function OperationsPanel({
               {item.error_code && <p>原因：{item.error_code}</p>}
               <details><summary>查看执行元信息</summary><pre>{JSON.stringify(item,null,2)}</pre></details>
             </div>) : <p>尚无沙箱执行记录。</p>)}
+          </details>}
+          {active.plan.steps.some(step=>step.arguments?.export_pricing_report) && <details>
+            <summary>文件生命周期记录</summary>
+            <button disabled={busy} className="secondary" onClick={()=>act(async()=>{const events=await api("/operations/"+active.id+"/file-events");setFileEvents(old=>({...old,["run:"+active.id]:events}));})}>刷新文件审计</button>
+            {fileEvents["run:"+active.id] && <pre>{JSON.stringify(fileEvents["run:"+active.id],null,2)}</pre>}
           </details>}
           <details>
             <summary>执行用量与记录</summary>

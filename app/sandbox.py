@@ -14,8 +14,9 @@ from app import store
 from app.tool_registry import ExecutionError
 
 PROJECT='tiktok-shop-agent-sandbox-v1-'+hashlib.sha256(str(Path(__file__).resolve().parents[1]).encode()).hexdigest()[:12]
-IMAGE_TAG='tiktok-shop-agent-sandbox:v1'
-POLICY_VERSION='offline-json-v1'
+IMAGE_VERSION='v2'
+IMAGE_TAG='tiktok-shop-agent-sandbox:v2'
+POLICY_VERSION='offline-files-v2'
 MAX_INPUT=65536
 MAX_OUTPUT=32768
 
@@ -153,7 +154,7 @@ async def current(ctx):
 
 
 async def run_job(ctx,job,data,*,policy=None):
-    if job not in ('pricing_v1','selftest_v1','oom_probe_v1','timeout_probe_v1'):raise SandboxError('UNKNOWN_JOB','未登记的沙箱任务')
+    if job not in ('pricing_v1','pricing_export_v1','selftest_v1','oom_probe_v1','timeout_probe_v1'):raise SandboxError('UNKNOWN_JOB','未登记的沙箱任务')
     policy=policy or Policy()
     if job=='oom_probe_v1' and policy.memory!=64*1024*1024:raise SandboxError('PROBE_POLICY','内存探针必须使用64MiB独立限额')
     if job=='selftest_v1' and policy.pids>16:raise SandboxError('PROBE_POLICY','进程探针必须使用不超过16的限额')
@@ -181,7 +182,7 @@ async def run_job(ctx,job,data,*,policy=None):
         rc,out,_=await command(['image','inspect',IMAGE_TAG])
         if rc:raise SandboxError('IMAGE_UNAVAILABLE','沙箱镜像未构建，请先运行沙箱设置脚本')
         image=json.loads(out)[0];image_id=image['Id']
-        if not re.fullmatch(r'sha256:[0-9a-f]{64}',image_id) or image['Config'].get('Labels',{}).get('ai.tiktok.shop.sandbox')!='v1':
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}',image_id) or image['Config'].get('Labels',{}).get('ai.tiktok.shop.sandbox')!=IMAGE_VERSION:
             raise SandboxError('IMAGE_UNAVAILABLE','沙箱镜像身份校验失败')
         args=['create','--name',name,'--interactive','--network','none','--read-only','--user','65532:65532',
               '--cap-drop','ALL','--security-opt','no-new-privileges','--ipc','private','--cgroupns','private',
@@ -215,8 +216,9 @@ async def run_job(ctx,job,data,*,policy=None):
         if state.get('OOMKilled'):raise SandboxError('MEMORY_LIMIT','沙箱超过内存限制')
         if rc or state.get('ExitCode')!=0:raise SandboxError('JOB_FAILED','沙箱任务未正常完成')
         result=json.loads(out)
-        if set(result)!={'protocol','job','data','usage'} or type(result['protocol']) is not int or result['protocol']!=1 or result['job']!=job or not isinstance(result['data'],dict):
+        if set(result) not in ({'protocol','job','data','usage'},{'protocol','job','data','usage','files'}) or type(result['protocol']) is not int or result['protocol']!=1 or result['job']!=job or not isinstance(result['data'],dict):
             raise SandboxError('INVALID_OUTPUT','沙箱输出不符合数据契约')
+        if 'file_refs' in result['data']:raise SandboxError('INVALID_OUTPUT','文件引用只能由受控存储生成')
         await current(ctx)
         usage=result['usage']
         if not isinstance(usage,dict) or set(usage)!={'cpu_seconds','peak_rss_kib'} or any(type(v) not in (int,float) or not math.isfinite(v) or v<0 for v in usage.values()):raise SandboxError('INVALID_OUTPUT','资源统计无效')
@@ -239,7 +241,13 @@ async def run_job(ctx,job,data,*,policy=None):
             failure.observation.update(stopped_confirmed=stopped,sandbox_id=key,elapsed_seconds=round(time.monotonic()-started,3))
             if not stopped:failure.observation['allowed_actions']=['ask','stop']
     if failure:raise failure
-    return result['data']
+    from app import sandbox_files
+    try:
+        refs=sandbox_files.stage({**ctx,'sandbox_id':key},job,result.get('files',[]))
+    except sandbox_files.FileError as exc:
+        audit(ctx,key,status='failed',error_code=exc.code)
+        raise SandboxError(exc.code,str(exc),stopped=True,sandbox_id=key,elapsed=time.monotonic()-started) from None
+    return {**result['data'],**({'file_refs':refs} if refs else {})}
 
 
 async def status():
