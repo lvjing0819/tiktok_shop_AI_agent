@@ -56,7 +56,15 @@ def engine(monkeypatch,tmp_path):
             if state['behavior']=='wait':await asyncio.sleep(100)
             if state.get('after_start'):state['after_start']()
             worker=runpy.run_path('sandbox/worker.py')
-            data=worker['pricing'](request['data'])
+            if request['job']=='api_gateway_v1':
+                gateway=kwargs['gateway']
+                frame={'protocol':1,'kind':'gateway_request',**request['data']}
+                if state.get('frame_mutate'):state['frame_mutate'](frame)
+                reply=await gateway.dispatch(frame)
+                state.setdefault('gateway_responses',[]).append(copy.deepcopy(reply))
+                data=reply['data']
+                if state.get('result_mutate'):data=state['result_mutate'](data)
+            else:data=worker['pricing'](request['data'])
             files=None
             if request['job']=='pricing_export_v1':
                 folder=tmp_path/('output-'+str(len(calls)))

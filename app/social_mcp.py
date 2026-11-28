@@ -13,6 +13,7 @@ from app import store
 from app.ads_mcp import tools
 from app.mcp_connection import OAuthMCP, MCPError, TokenStorage
 from app.mcp_results import success
+from app.tool_registry import ExecutionError
 
 SocialError = MCPError
 client = OAuthMCP(
@@ -78,12 +79,15 @@ async def session(shop, allow_disabled=False):
         async with client.session(shop) as mcp:
             yield mcp
         return
+    from app.api_gateway import preflight
+    await preflight(shop,'social')
     setting = store.get("social-api:" + shop, "social_api_check", shop)
     if setting and setting.get("disabled") and not allow_disabled:
         raise SocialError("Social API token 连接已断开，请重新连接")
     token = os.getenv("SOCIAL_API_ACCESS_TOKEN", "").strip()
     if not token:
         raise SocialError("尚未在本机配置 Organic API 用户 access token")
+    body_error=None
     try:
         async with asyncio.timeout(120):
             async with httpx.AsyncClient(
@@ -96,10 +100,15 @@ async def session(shop, allow_disabled=False):
                 ):
                     async with ClientSession(read, write) as mcp:
                         await mcp.initialize()
-                        yield mcp
-    except SocialError:
+                        from app.api_gateway import wrap_mcp
+                        try:yield wrap_mcp(mcp,shop,'social')
+                        except (SocialError,ExecutionError) as exc:
+                            body_error=exc
+                            raise
+    except (SocialError, ExecutionError):
         raise
     except Exception:
+        if body_error is not None:raise body_error from None
         raise SocialError(
             "Social API token 连接失败，请检查用户令牌、权限及有效期"
         ) from None
@@ -166,3 +175,11 @@ async def call(mcp, available, name, arguments):
     if len(json.dumps(result).encode()) > 2_000_000:
         raise SocialError("Social 返回数据过大，请缩小查询范围")
     return result
+
+
+async def execute_read(shop, name, arguments):
+    from app.api_gateway import direct
+    with direct(shop,'social.analyze',{'name':name}):
+        async with session(shop) as mcp:
+            available=await tools(mcp)
+            return await call(mcp,available,name,arguments)

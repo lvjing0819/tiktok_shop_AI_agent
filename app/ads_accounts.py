@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from jsonschema import Draft202012Validator
 from app import ads_mcp as ads
 from app.mcp_results import payload, success
+from app.api_gateway import isolated
 
 
 def normalize(value):
@@ -26,6 +27,7 @@ def matches(accounts, selector):
     )
 
 
+@isolated('ads.accounts')
 async def inspect(shop, selector=None):
     evidence = []
     async with ads.session(shop) as mcp:

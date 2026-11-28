@@ -17,6 +17,7 @@ from mcp.shared.auth import OAuthClientMetadata, OAuthToken, OAuthClientInformat
 from sqlalchemy import select, delete
 from app import store
 from app.model import ModelError
+from app.tool_registry import ExecutionError
 
 
 class MCPError(Exception):
@@ -135,6 +136,9 @@ class OAuthMCP:
 
     @asynccontextmanager
     async def session(self, shop, generation=None, attempt_id=None):
+        if not attempt_id:
+            from app.api_gateway import preflight
+            await preflight(shop,self.prefix)
         item = self.connection(shop)
         if not item or (not attempt_id and item["status"] != "connected"):
             raise MCPError("请先连接 " + self.label)
@@ -226,13 +230,14 @@ class OAuthMCP:
                         async with ClientSession(read, write) as mcp:
                             await mcp.initialize()
                             try:
-                                yield mcp
-                            except (MCPError, ModelError) as exc:
+                                from app.api_gateway import wrap_mcp
+                                yield wrap_mcp(mcp,shop,self.prefix) if not attempt_id else mcp
+                            except (MCPError, ModelError, ExecutionError) as exc:
                                 # MCP task groups may wrap caller exceptions during
                                 # cleanup; retain safe domain errors for the API.
                                 body_error = exc
                                 raise
-        except MCPError:
+        except (MCPError, ExecutionError):
             raise
         except TimeoutError:
             raise MCPError(

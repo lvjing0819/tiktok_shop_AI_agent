@@ -1,5 +1,7 @@
 # 沙箱文件产物、权限与生命周期
 
+当前镜像已升级v3，文件策略不变。请以[API网关补充](api-gateway-v12.md)中的当前镜像与验收说明为准。
+
 ## 首版范围
 
 在现有Harness和离线执行器上增加固定`pricing_export_v1`任务。运营任务`product.prepare_listing`新增可选`export_pricing_report: true`；省略时保留原JSON定价流程。导出使用相同公式，计算后复核同一业务快照，工具版本升为3。首次部署需重新运行`scripts.setup_sandbox`构建v2镜像；旧v1镜像不会被新策略选中。

@@ -14,9 +14,9 @@ from app import store
 from app.tool_registry import ExecutionError
 
 PROJECT='tiktok-shop-agent-sandbox-v1-'+hashlib.sha256(str(Path(__file__).resolve().parents[1]).encode()).hexdigest()[:12]
-IMAGE_VERSION='v2'
-IMAGE_TAG='tiktok-shop-agent-sandbox:v2'
-POLICY_VERSION='offline-files-v2'
+IMAGE_VERSION='v3'
+IMAGE_TAG='tiktok-shop-agent-sandbox:v3'
+POLICY_VERSION='mediated-api-v3'
 MAX_INPUT=65536
 MAX_OUTPUT=32768
 
@@ -52,9 +52,9 @@ def cli_env():
     return {key:os.environ[key] for key in allowed if key in os.environ}
 
 
-async def command(args,*,input=None,timeout=15,limit=MAX_OUTPUT):
+async def command(args,*,input=None,timeout=15,limit=MAX_OUTPUT,gateway=None):
     proc=await asyncio.create_subprocess_exec(docker(),*args,stdin=asyncio.subprocess.PIPE if input is not None else asyncio.subprocess.DEVNULL,
-              stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=cli_env())
+              stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=cli_env(),limit=limit+1024)
     async def read(stream):
         data=bytearray()
         while True:
@@ -66,11 +66,26 @@ async def command(args,*,input=None,timeout=15,limit=MAX_OUTPUT):
         if input is not None:
             try:proc.stdin.write(input);await proc.stdin.drain()
             except (BrokenPipeError,ConnectionResetError):pass
-            finally:proc.stdin.close()
-    tasks=[asyncio.create_task(read(proc.stdout)),asyncio.create_task(read(proc.stderr)),asyncio.create_task(write())]
+            finally:
+                if gateway is None:proc.stdin.close()
+    async def exchange():
+        await write()
+        # Exactly one capability request, then one final result. No arbitrary RPC.
+        line=await proc.stdout.readline()
+        if len(line)>65536:raise SandboxError('INPUT_LIMIT','网关请求过大')
+        try:frame=json.loads(line)
+        except (ValueError,TypeError):raise SandboxError('GATEWAY_DENIED','网关请求格式无效') from None
+        response=await gateway.dispatch(frame)
+        raw=json.dumps(response,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()+b'\n'
+        if len(raw)>limit:raise SandboxError('OUTPUT_LIMIT','网关回复过大')
+        proc.stdin.write(raw);await proc.stdin.drain();proc.stdin.close()
+        return await read(proc.stdout)
+    tasks=[asyncio.create_task(exchange() if gateway else read(proc.stdout)),asyncio.create_task(read(proc.stderr))]
+    if gateway is None:tasks.append(asyncio.create_task(write()))
     try:
         async with asyncio.timeout(timeout):
-            stdout,stderr,_,_=await asyncio.gather(*tasks,proc.wait())
+            values=await asyncio.gather(*tasks,proc.wait())
+            stdout,stderr=values[:2]
         return proc.returncode,stdout,stderr
     finally:
         for task in tasks:
@@ -153,14 +168,16 @@ async def current(ctx):
         with store.db() as conn:ctx['assert_current'](conn)
 
 
-async def run_job(ctx,job,data,*,policy=None):
-    if job not in ('pricing_v1','pricing_export_v1','selftest_v1','oom_probe_v1','timeout_probe_v1'):raise SandboxError('UNKNOWN_JOB','未登记的沙箱任务')
+async def run_job(ctx,job,data,*,policy=None,gateway=None):
+    if job not in ('pricing_v1','pricing_export_v1','selftest_v1','oom_probe_v1','timeout_probe_v1','api_gateway_v1'):raise SandboxError('UNKNOWN_JOB','未登记的沙箱任务')
+    if (job=='api_gateway_v1') != (gateway is not None):raise SandboxError('GATEWAY_DENIED','API执行必须绑定本次网关授权')
     policy=policy or Policy()
     if job=='oom_probe_v1' and policy.memory!=64*1024*1024:raise SandboxError('PROBE_POLICY','内存探针必须使用64MiB独立限额')
     if job=='selftest_v1' and policy.pids>16:raise SandboxError('PROBE_POLICY','进程探针必须使用不超过16的限额')
     request=json.dumps({'job':job,'data':data,'limits':asdict(policy)},ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()+b'\n'
     if len(request)>MAX_INPUT:raise SandboxError('INPUT_LIMIT','沙箱输入超出大小限制')
     key=str(uuid4());name='shop-sbx-'+key;labels=identity(ctx,key);started=time.monotonic();created=False
+    if gateway is not None:gateway.sandbox_id=key
     from sqlalchemy import select
     with store.db(write=True) as conn:
         for raw, in conn.execute(select(store.records.c.payload).where(store.records.c.kind=='sandbox_run',store.records.c.shop==ctx['workspace'])):
@@ -201,7 +218,8 @@ async def run_job(ctx,job,data,*,policy=None):
         verify_container(item,labels,image_id,policy,image['Config'].get('Env'))
         await current(ctx)
         audit(ctx,key,status='running',image_id=image_id,started_at=time.time())
-        task=asyncio.create_task(command(['start','--attach','--interactive',name],input=request,timeout=policy.timeout))
+        options={'gateway':gateway,'limit':2_100_000} if gateway is not None else {}
+        task=asyncio.create_task(command(['start','--attach','--interactive',name],input=request,timeout=policy.timeout,**options))
         try:
             while not task.done():
                 await asyncio.wait({task},timeout=.25)
@@ -216,6 +234,8 @@ async def run_job(ctx,job,data,*,policy=None):
         if state.get('OOMKilled'):raise SandboxError('MEMORY_LIMIT','沙箱超过内存限制')
         if rc or state.get('ExitCode')!=0:raise SandboxError('JOB_FAILED','沙箱任务未正常完成')
         result=json.loads(out)
+        if gateway is not None:
+            gateway.validate_delivery(result.get('data'))
         if set(result) not in ({'protocol','job','data','usage'},{'protocol','job','data','usage','files'}) or type(result['protocol']) is not int or result['protocol']!=1 or result['job']!=job or not isinstance(result['data'],dict):
             raise SandboxError('INVALID_OUTPUT','沙箱输出不符合数据契约')
         if 'file_refs' in result['data']:raise SandboxError('INVALID_OUTPUT','文件引用只能由受控存储生成')
@@ -228,7 +248,7 @@ async def run_job(ctx,job,data,*,policy=None):
         failure=SandboxError('TIMEOUT' if time.monotonic()>=ctx.get('deadline_monotonic',float('inf')) else 'CANCELLED','沙箱执行已停止')
     except SandboxError as exc:failure=exc
     except ExecutionError:failure=SandboxError('STALE_ATTEMPT','任务版本或执行尝试已失效')
-    except Exception:failure=SandboxError('RUNTIME_ERROR','沙箱运行环境或结果异常')
+    except Exception:failure=SandboxError('GATEWAY_UPSTREAM_FAILED' if gateway is not None and gateway.error else 'RUNTIME_ERROR','API 网关请求失败' if gateway is not None and gateway.error else '沙箱运行环境或结果异常')
     finally:
         stopped=not created
         if created:
@@ -239,8 +259,12 @@ async def run_job(ctx,job,data,*,policy=None):
               error_code=failure.observation['code'] if failure else None,elapsed_seconds=round(time.monotonic()-started,3),finished_at=time.time())
         if failure:
             failure.observation.update(stopped_confirmed=stopped,sandbox_id=key,elapsed_seconds=round(time.monotonic()-started,3))
+            if gateway is not None:failure.observation['external_effect']='read_only_requests_possible' if gateway.used else 'none'
             if not stopped:failure.observation['allowed_actions']=['ask','stop']
-    if failure:raise failure
+    if failure:
+        if gateway is not None and gateway.error is not None and stopped and failure.observation['code']=='GATEWAY_UPSTREAM_FAILED':
+            raise gateway.error
+        raise failure
     from app import sandbox_files
     try:
         refs=sandbox_files.stage({**ctx,'sandbox_id':key},job,result.get('files',[]))
@@ -255,12 +279,15 @@ async def status():
         rc,out,_=await command(['info','--format','{{json .}}'],timeout=5,limit=131072)
         if rc:return {'ready':False,'reason':'Docker未启动或不可访问'}
         info=json.loads(out)
-        rc,_,_=await command(['image','inspect',IMAGE_TAG],timeout=5)
-        return {'ready':rc==0 and info.get('CgroupVersion')=='2' and any('seccomp' in str(v) for v in info.get('SecurityOptions',[])),
-                'image_ready':rc==0,'cgroup_version':info.get('CgroupVersion'),
+        rc,out,_=await command(['image','inspect',IMAGE_TAG],timeout=5)
+        image=json.loads(out)[0] if rc==0 else {}
+        image_ready=bool(re.fullmatch(r'sha256:[0-9a-f]{64}',image.get('Id','')) and image.get('Config',{}).get('Labels',{}).get('ai.tiktok.shop.sandbox')==IMAGE_VERSION)
+        return {'ready':image_ready and info.get('CgroupVersion')=='2' and any('seccomp' in str(v) for v in info.get('SecurityOptions',[])),
+                'image_ready':image_ready,'cgroup_version':info.get('CgroupVersion'),
                 'security_options':info.get('SecurityOptions',[]),'policy_version':POLICY_VERSION,
-                'execution':'offline fixed JSON jobs','user_namespace_enforced':False}
-    except (SandboxError,OSError,TimeoutError,ValueError):return {'ready':False,'reason':'尚未连接可用Docker运行环境'}
+                'execution':'fixed offline jobs and private-channel API gateway',
+                'api_gateway':{'transport':'private_stdio','direct_network':False,'read_only':True},'user_namespace_enforced':False}
+    except (SandboxError,OSError,TimeoutError,ValueError,IndexError,TypeError,KeyError):return {'ready':False,'reason':'尚未连接可用Docker运行环境'}
 
 
 async def recover_expired():

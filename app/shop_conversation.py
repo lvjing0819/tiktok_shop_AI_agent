@@ -1,6 +1,7 @@
 """Shop selection/clarification; deterministic reads reuse the HTTP adapter."""
 from pydantic import ValidationError
 from app import shop_api, shop_read
+from app.api_gateway import direct
 
 
 def discovery_evidence(data):
@@ -25,7 +26,8 @@ async def query(workspace, args, context, run):
             params.pop('start_date', None)
             params.pop('end_date', None)
     selector = params.get('shop') or (previous.get('shop') if args.get('reuse_previous_shop') else None)
-    data, selected = await shop_read.discover(workspace, selector)
+    with direct(workspace,'shop.discover',{'selector':selector}):
+        data, selected = await shop_read.discover(workspace, selector)
     run['evidence'] = [discovery_evidence(data)]
     if not selected:
         context['pending_shop'] = params
@@ -76,7 +78,8 @@ async def query(workspace, args, context, run):
     sections, successes, errors = [], [], []
     for resource, request in requests:
         try:
-            result = await shop_read.execute(workspace, resource, request, selected=selected)
+            with direct(workspace,'shop.query',{'operation':resource,**request.model_dump(mode='json')}):
+                result = await shop_read.execute(workspace, resource, request, selected=selected)
             run['evidence'].extend(result['evidence'])
             sections.append(shop_read.render(result))
             successes.append({'operation': resource, 'complete': result['complete'], 'retrieved_count': result['retrieved_count']})

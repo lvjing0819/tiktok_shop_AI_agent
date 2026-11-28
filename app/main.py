@@ -12,6 +12,18 @@ load_dotenv()
 app = FastAPI(title="TikTok Shop Agent Workbench", version="0.8.0")
 
 
+from app.sandbox import SandboxError
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(SandboxError)
+async def sandbox_failure(request, exc):
+    unavailable={'RUNTIME_UNAVAILABLE','IMAGE_UNAVAILABLE','CLEANUP_UNCONFIRMED','POLICY_MISMATCH'}
+    return JSONResponse(status_code=503 if exc.observation['code'] in unavailable else 502,
+                        content={'detail':str(exc),'sandbox_observation':exc.observation},
+                        headers={'Cache-Control':'no-store'})
+
+
 def scope(
     x_shop_id: str = Header(default="default", pattern=r"^[a-zA-Z0-9_-]{1,64}$"),
     authorization: str = Header(default=""),

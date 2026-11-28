@@ -140,19 +140,17 @@ def router(scope):
         if not social.permitted({"name": body.name}):
             raise HTTPException(403, "Social 当前只允许已确认的只读工具")
         try:
-            async with social.session(shop) as mcp:
-                available = await social.tools(mcp)
-                result = await social.call(mcp, available, body.name, body.arguments)
-                record = {
-                    "id": str(uuid4()),
-                    "tool": body.name,
-                    "arguments": body.arguments,
-                    "result": result,
-                    "read_only": True,
-                    "created_at": time.time(),
-                }
-                store.save(record, "social_call", shop)
-                return record
+            result = await social.execute_read(shop,body.name,body.arguments)
+            record = {
+                "id": str(uuid4()),
+                "tool": body.name,
+                "arguments": body.arguments,
+                "result": result,
+                "read_only": True,
+                "created_at": time.time(),
+            }
+            store.save(record, "social_call", shop)
+            return record
         except social.SocialError as exc:
             raise HTTPException(502, str(exc))
 

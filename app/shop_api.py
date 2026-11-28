@@ -289,6 +289,13 @@ def sign(path, params, body, app_secret):
 
 
 async def request_json(url, *, params, headers=None, method="GET", content=None):
+    from app import api_gateway
+    if api_gateway.active.get() is not None:
+        return await api_gateway.shop_request(url,params=params,headers=headers,method=method,content=content)
+    return await _request_json(url,params=params,headers=headers,method=method,content=content)
+
+
+async def _request_json(url, *, params, headers=None, method="GET", content=None):
     # URLs are fixed by the adapter, never supplied by a model or API caller.
     execution_context.remote_call(urlsplit(url).path)
     try:

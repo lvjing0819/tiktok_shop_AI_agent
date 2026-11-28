@@ -13,6 +13,7 @@ from app.mcp_results import success
 from app import ad_metric_comparisons
 
 MAX_CALLS = 6
+from app.api_gateway import isolated, active as api_scope
 
 
 class State(TypedDict):
@@ -68,6 +69,7 @@ def row_calculations(result):
     return output
 
 
+@isolated('ads.analyze')
 async def analyze(
     shop, advertiser_id, question, start_date, end_date, conversation_context=None
 ):
@@ -172,7 +174,7 @@ async def analyze(
                     raise ads_mcp.AdsError(
                         "模型生成的工具参数不符合官方定义，请缩小问题后重试"
                     ) from None
-                execution_context.remote_call("ads:" + name)
+                if api_scope.get() is None:execution_context.remote_call("ads:" + name)
                 result = (await mcp.call_tool(name, args)).model_dump(
                     mode="json", by_alias=True
                 )

@@ -7,6 +7,7 @@ from typing import TypedDict
 from uuid import uuid4
 from langgraph.graph import StateGraph, START, END
 from app import social_mcp as social, model, store, memory, execution_context
+from app.api_gateway import isolated, active as api_scope
 
 
 class State(TypedDict):
@@ -17,6 +18,7 @@ class State(TypedDict):
     answer: str
 
 
+@isolated('social.analyze')
 async def query(shop, question, conversation_context=None):
     if model.mode() != "bailian":
         raise social.SocialError(
@@ -86,7 +88,7 @@ async def query(shop, question, conversation_context=None):
                 except (ValueError, TypeError):
                     raise social.SocialError("模型生成了无效工具参数") from None
                 name = function.get("name")
-                execution_context.remote_call("social:" + str(name))
+                if api_scope.get() is None:execution_context.remote_call("social:" + str(name))
                 result = await social.call(mcp, allowed, name, arguments)
                 eid = "S" + str(len(evidence) + 1)
                 evidence.append(

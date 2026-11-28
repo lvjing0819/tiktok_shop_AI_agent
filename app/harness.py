@@ -382,7 +382,10 @@ async def gateway(scope, step, args):
         context={'workspace':scope.workspace,'run_id':scope.key,'revision':r['revision'],'step_id':step.id,'attempt_id':scope.attempt_id,'operation_id':receipt_id,'assert_current':scope.assert_current,'deadline_monotonic':time.monotonic()+min(tool.timeout_seconds,r['budget']['max_active_seconds']-r['active_seconds'])}
         remaining=r['budget']['max_active_seconds']-r['active_seconds']
         async with asyncio.timeout(max(.01,min(tool.timeout_seconds,remaining))):
-            result=await tool.handler(context,args)
+            if tool.execution=='service_with_api_sandbox':
+                from app.api_gateway import execution
+                with execution(context,tool.name,args):result=await tool.handler(context,args)
+            else:result=await tool.handler(context,args)
         if not isinstance(result,dict) or result.get('status') not in ('completed','waiting_input','blocked') or not isinstance(result.get('data'),dict):
             raise ExecutionError('工具返回未满足结果契约')
         if tool.output_schema and result['status']=='completed':

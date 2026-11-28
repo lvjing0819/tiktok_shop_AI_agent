@@ -263,7 +263,8 @@ async def dispatch(session_id, shop, text, messages, session):
     if name in ("list_shop_shops", "query_shop"):
         try:
             if name == "list_shop_shops":
-                data = await shop_api.shops(shop)
+                from app.api_gateway import direct
+                with direct(shop,'shop.discover',{}):data = await shop_api.shops(shop)
                 run['evidence'] = [shop_conversation.discovery_evidence(data)]
                 run['data_verified'] = True
                 context['last_domain'] = 'shop'

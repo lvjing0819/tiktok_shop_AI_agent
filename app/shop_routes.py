@@ -166,21 +166,27 @@ def router(scope):
     @r.post("/api/shop/products/query")
     async def products(body: shop_read.ProductsQuery, workspace=Depends(scope)):
         try:
-            return await shop_read.execute(workspace, "products", body)
+            from app.api_gateway import direct
+            with direct(workspace,'shop.query',{'operation':'products',**body.model_dump(mode='json')}):
+                return await shop_read.execute(workspace, "products", body)
         except shop.ShopError as exc:
             raise HTTPException(502, str(exc))
 
     @r.post("/api/shop/orders/query")
     async def orders(body: shop_read.OrdersQuery, workspace=Depends(scope)):
         try:
-            return await shop_read.execute(workspace, "orders", body)
+            from app.api_gateway import direct
+            with direct(workspace,'shop.query',{'operation':'orders',**body.model_dump(mode='json')}):
+                return await shop_read.execute(workspace, "orders", body)
         except shop.ShopError as exc:
             raise HTTPException(502, str(exc))
 
     @r.post("/api/shop/inventory/query")
     async def inventory(body: shop_read.InventoryQuery, workspace=Depends(scope)):
         try:
-            return await shop_read.execute(workspace, "inventory", body)
+            from app.api_gateway import direct
+            with direct(workspace,'shop.query',{'operation':'inventory',**body.model_dump(mode='json')}):
+                return await shop_read.execute(workspace, "inventory", body)
         except shop.ShopError as exc:
             raise HTTPException(502, str(exc))
 

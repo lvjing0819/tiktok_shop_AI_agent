@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 import httpx
 import pytest
+from test_sandbox import engine
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from app import shop_api as api, shop_read, store, model
@@ -78,7 +79,7 @@ def token(access='fake-access'):
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, engine):
     monkeypatch.delenv('DATABASE_URL', raising=False)
     monkeypatch.delenv('APP_TOKEN', raising=False)
     monkeypatch.setenv('DATABASE_PATH', str(tmp_path / 'shop-read.sqlite'))
@@ -96,6 +97,29 @@ def setup(tmp_path, monkeypatch):
 
 def post(client, operation, **kwargs):
     return client.post('/api/shop/' + operation + '/query', json={'shop_id': '1', **kwargs})
+
+
+def test_gateway_denies_other_shop_cipher_and_arbitrary_url(setup):
+    from app import api_gateway as gateway, sandbox
+    _,provider=setup
+    async def task():
+        with gateway.direct('default','shop.query',{'operation':'products','shop_id':'1'}):
+            for url,params in [(api.API_ROOT+shop_read.PATHS['products'],{'shop_cipher':'fake-th-cipher'}),
+                               ('https://example.invalid/private',{})]:
+                with pytest.raises(sandbox.SandboxError):
+                    await api.request_json(url,method='POST',params=params,content=b'{}',headers={'x-tts-access-token':'fake-access'})
+    asyncio.run(task())
+    assert not provider.requests
+
+
+def test_private_channel_never_delivers_buyer_fields_or_shop_cipher(setup,engine):
+    client,p=setup
+    p.orders=[{'id':'10','status':'DELIVERED','buyer_email':'private-email','recipient_address':{'phone_number':'private-phone'},'payment':{'currency':'MYR','total_amount':'1.00'}}]
+    result=post(client,'orders',start_date='2026-11-01',end_date='2026-11-01')
+    assert result.status_code==200,result.text
+    wire=json.dumps(engine[0]['gateway_responses'])
+    assert 'private-email' not in wire and 'private-phone' not in wire and 'fake-my-cipher' not in wire
+    assert len(engine[0]['gateway_responses'])>=2
 
 
 def test_products_body_signature_unicode_and_full_pagination(setup):

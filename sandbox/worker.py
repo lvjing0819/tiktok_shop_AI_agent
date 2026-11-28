@@ -105,12 +105,31 @@ def timeout_probe(data):
     return {'unexpected_success':True}
 
 
+def api_request(data):
+    if set(data)!={'capability','service','operation','arguments'} or data['service'] not in ('shop','ads','social') or not isinstance(data['arguments'],dict):
+        raise ValueError('Invalid API request')
+    if not isinstance(data['capability'],str) or not 32<=len(data['capability'])<=128 or not isinstance(data['operation'],str):
+        raise ValueError('Invalid capability')
+    allowed = ('tools.list',) if data['service']!='shop' else ('shop.shops','shop.products','shop.orders','shop.inventory')
+    if data['operation'] not in allowed and not (data['service']!='shop' and data['operation'].startswith('tools.call:')):
+        raise ValueError('Unsupported API operation')
+    frame={'protocol':1,'kind':'gateway_request',**data}
+    sys.stdout.write(json.dumps(frame,ensure_ascii=False,separators=(',',':'))+'\n');sys.stdout.flush()
+    raw=sys.stdin.buffer.readline(2_100_001)
+    if len(raw)>2_100_000:raise ValueError('API response too large')
+    value=json.loads(raw)
+    if set(value)!={'protocol','kind','data'} or value['protocol']!=1 or value['kind']!='gateway_response' or not isinstance(value['data'],dict):
+        raise ValueError('Invalid gateway response')
+    # No eval/exec, subprocess or dynamic imports from upstream content.
+    return value['data']
+
+
 def main():
     raw=sys.stdin.buffer.readline(65537)
     if len(raw)>65536:raise ValueError('Input too large')
     request=json.loads(raw)
     if set(request)!={'job','data','limits'} or not isinstance(request['data'],dict):raise ValueError('Invalid request')
-    jobs={'pricing_v1':pricing,'pricing_export_v1':pricing_export,'selftest_v1':selftest,'oom_probe_v1':oom_probe,'timeout_probe_v1':timeout_probe}
+    jobs={'pricing_v1':pricing,'pricing_export_v1':pricing_export,'selftest_v1':selftest,'oom_probe_v1':oom_probe,'timeout_probe_v1':timeout_probe,'api_gateway_v1':api_request}
     if request['job'] not in jobs:raise ValueError('Unknown job')
     probe=runtime_probe({})
     limits=probe['limits'];expected=request['limits']
@@ -126,7 +145,7 @@ def main():
         answer['files']=[package_file('/work/output','pricing.json','output'),package_file('/work/output','intermediate.json','temporary')]
     usage=resource.getrusage(resource.RUSAGE_SELF)
     answer['usage']={'cpu_seconds':round(usage.ru_utime+usage.ru_stime,6),'peak_rss_kib':usage.ru_maxrss}
-    sys.stdout.write(json.dumps(answer,separators=(',',':'))+'\n')
+    sys.stdout.write(json.dumps(answer,ensure_ascii=False,separators=(',',':'))+'\n')
 
 
 if __name__=='__main__':

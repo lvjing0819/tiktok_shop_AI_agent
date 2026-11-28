@@ -26,8 +26,8 @@ class Tool:
     def __post_init__(self):
         Draft202012Validator.check_schema(self.schema)
         if self.output_schema:Draft202012Validator.check_schema(self.output_schema)
-        if self.execution not in ('trusted_service','service_with_sandbox'):raise ValueError('Unknown execution policy')
-        if (self.execution=='service_with_sandbox' and self.sandbox_job!='pricing_v1') or (self.execution=='trusted_service' and self.sandbox_job is not None):raise ValueError('Invalid sandbox job policy')
+        jobs={'trusted_service':None,'service_with_sandbox':'pricing_v1','service_with_api_sandbox':'api_gateway_v1'}
+        if self.execution not in jobs or self.sandbox_job!=jobs[self.execution]:raise ValueError('Invalid execution policy')
         if self.effect not in ('read', 'draft', 'external_write'):
             raise ValueError('Unknown tool effect')
 
